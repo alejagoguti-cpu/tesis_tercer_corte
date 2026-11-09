@@ -197,27 +197,44 @@ button{font-family:inherit;cursor:pointer}
 @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
 </style>
 <style>
-#problema-territorial{position:fixed;inset:0;z-index:9999;background:#f0eee8;color:#252a29;font-family:Inter,Arial,sans-serif;overflow-y:auto}
+#problema-territorial{position:fixed;inset:0;z-index:9999;background:#050607;color:#f3f2ef;font-family:Inter,Arial,sans-serif;overflow:hidden}
 #problema-territorial *{box-sizing:border-box}
-#problema-territorial .marco{min-height:100%;max-width:1600px;margin:auto;padding:clamp(24px,4vw,64px);display:flex;flex-direction:column}
-#problema-territorial .cabecera{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #a8aaa5;padding-bottom:18px;gap:20px;font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase}
-#problema-territorial .cabecera span:last-child{font-weight:400;color:#6e7673}
-#problema-territorial .cuerpo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:clamp(35px,7vw,120px);align-items:center;flex:1;padding:clamp(50px,9vh,110px) 0}
-#problema-territorial .indice{font-size:12px;color:#727b78;letter-spacing:.06em;align-self:start}
-#problema-territorial .texto{max-width:800px}
-#problema-territorial .sobrelinea{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#68736f;margin-bottom:26px}
-#problema-territorial h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:clamp(43px,5.5vw,88px);letter-spacing:-.045em;line-height:1.04;margin:0 0 34px}
-#problema-territorial p{font-size:clamp(16px,1.35vw,20px);line-height:1.75;color:#4b5451;max-width:650px;margin:0}
-#problema-territorial .pie{border-top:1px solid #a8aaa5;padding-top:18px;display:flex;justify-content:space-between;align-items:center;gap:24px}
-#problema-territorial .pie small{font-size:11px;color:#6b7470;letter-spacing:.04em}
-#problema-territorial button{background:transparent;color:#252a29;border:0;border-bottom:1px solid #252a29;padding:10px 0;font-size:13px;font-weight:600;letter-spacing:.01em;cursor:pointer}
-#problema-territorial button:hover{color:#526e67;border-color:#526e67}
-#problema-territorial button:focus-visible{outline:2px solid #526e67;outline-offset:6px}
-@media(max-width:760px){#problema-territorial .cuerpo{grid-template-columns:1fr;gap:30px;align-content:center}#problema-territorial .indice{align-self:auto}#problema-territorial .pie small{max-width:150px}#problema-territorial h1{font-size:clamp(42px,10vw,62px)}}
+#problema-territorial .pm-head{position:absolute;top:5%;left:5%;right:5%;display:flex;justify-content:space-between;z-index:3;font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:#a6aaa9}
+#problema-territorial .pm-scene{position:absolute;inset:0;overflow:hidden}
+#problema-territorial .pm-lines{position:absolute;inset:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 0 13px rgba(70,195,205,.3))}
+#problema-territorial .pm-path{fill:none;stroke-width:12;stroke-linecap:round;opacity:.83;stroke-dasharray:1350;stroke-dashoffset:1350;animation:pm-draw 3.7s cubic-bezier(.2,.65,.25,1) forwards,pm-flow 8s ease-in-out 3.7s infinite alternate}
+#problema-territorial .pm-path.p2{animation-delay:.3s,4s}#problema-territorial .pm-path.p3{animation-delay:.6s,4.3s}
+#problema-territorial .pm-path.pm-soft{stroke-width:30;opacity:.24;filter:blur(17px)}
+#problema-territorial .pm-light{position:absolute;top:48%;left:63%;width:25%;height:2px;background:linear-gradient(90deg,#fff,rgba(255,255,255,0));box-shadow:0 0 18px #e9faff;transform-origin:left;animation:pm-beam 2s ease-out 2.7s both}
+#problema-territorial .pm-point{position:absolute;top:calc(48% - 7px);left:calc(63% - 7px);height:14px;width:14px;background:white;border-radius:50%;box-shadow:0 0 18px #fff,0 0 50px #8edce5;animation:pm-appear 1s ease-out 2.6s both}
+#problema-territorial .pm-content{position:absolute;z-index:2;left:50%;top:48%;transform:translate(-50%,-50%);width:min(680px,80vw);text-align:center}
+#problema-territorial .pm-tag{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#d8d9d8;margin-bottom:18px;animation:pm-appear 1s ease-out .8s both}
+#problema-territorial .pm-title{font-family:Georgia,'Times New Roman',serif;font-size:clamp(38px,5.3vw,76px);font-weight:400;letter-spacing:-.045em;line-height:1.06;margin:0 0 25px;text-shadow:0 2px 35px #000;animation:pm-appear 1.1s ease-out 1.2s both}
+#problema-territorial .pm-copy{font-size:clamp(15px,1.5vw,19px);line-height:1.65;color:#e0e0df;max-width:590px;margin:0 auto;padding:0 8px;text-shadow:0 2px 20px #000;animation:pm-appear 1.1s ease-out 1.7s both}
+#problema-territorial .pm-bottom{position:absolute;bottom:6%;left:5%;right:5%;z-index:3;display:flex;justify-content:space-between;align-items:end;gap:20px}
+#problema-territorial .pm-note{font-size:11px;color:#a4a9aa;letter-spacing:.05em}
+#problema-territorial button{background:rgba(235,241,241,.12);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.35);border-radius:40px;padding:15px 25px;color:white;font-size:13px;cursor:pointer;transition:background .25s}
+#problema-territorial button:hover{background:rgba(235,241,241,.27)}
+#problema-territorial button:focus-visible{outline:2px solid #fff;outline-offset:5px}
+#problema-territorial.pm-exit{opacity:0;transition:opacity .8s ease;pointer-events:none}
+@keyframes pm-draw{to{stroke-dashoffset:0}}@keyframes pm-flow{to{transform:translate(14px,-8px)}}@keyframes pm-appear{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:translateY(0)}}@keyframes pm-beam{from{opacity:0;transform:scaleX(0)}to{opacity:.85;transform:scaleX(1)}}
+@media(max-width:700px){#problema-territorial .pm-content{width:90vw;top:48%}#problema-territorial .pm-title{font-size:clamp(38px,9vw,58px)}#problema-territorial .pm-bottom{bottom:4%}#problema-territorial .pm-note{max-width:120px;line-height:1.5}#problema-territorial .pm-lines{width:180%;left:-50%}}
+@media(prefers-reduced-motion:reduce){#problema-territorial *,#problema-territorial *::before{animation:none!important;transition:none!important}#problema-territorial .pm-path{stroke-dashoffset:0}}
 </style>
 </head>
 <body>
-<section id="problema-territorial" role="dialog" aria-modal="true" aria-labelledby="problema-titulo"><div class="marco"><header class="cabecera"><span>Tierra Bomba</span><span>Lectura territorial / 01</span></header><div class="cuerpo"><div class="indice">01 — Problema central</div><div class="texto"><div class="sobrelinea">Transformaciones del borde costero</div><h1 id="problema-titulo">La tierra que<br>retrocede.</h1><p>La pérdida paulatina de suelo costero por el aumento del mar amenaza con desplazar progresivamente a la población de Tierra Bomba y fragmentar sus modos de vida.</p></div></div><footer class="pie"><small>Isla de Tierra Bomba · Cartagena, Colombia</small><button id="entrar-tierrabomba" type="button">Entrar al territorio &nbsp;↗</button></footer></div></section><script>document.getElementById('entrar-tierrabomba').addEventListener('click',function(){document.getElementById('problema-territorial').remove()});</script>
+<section id="problema-territorial" role="dialog" aria-modal="true" aria-labelledby="problema-titulo">
+<div class="pm-head"><span>Tierra Bomba / Cartagena</span><span>01 — Problema central</span></div>
+<div class="pm-scene" aria-hidden="true"><svg class="pm-lines" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="pm-sea" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#62d7d4"/><stop offset=".52" stop-color="#8d92e8"/><stop offset="1" stop-color="#d1b9e8"/></linearGradient><linearGradient id="pm-land" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#f06c4e"/><stop offset=".6" stop-color="#edac64"/><stop offset="1" stop-color="#f3d69a"/></linearGradient><linearGradient id="pm-tide" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7de5d8"/><stop offset="1" stop-color="#9ac6da"/></linearGradient></defs>
+<path class="pm-path pm-soft p1" stroke="url(#pm-sea)" d="M-120 140 C150 -30 220 100 300 240 S470 450 610 360 S760 260 910 432"/>
+<path class="pm-path p1" stroke="url(#pm-sea)" d="M-120 140 C150 -30 220 100 300 240 S470 450 610 360 S760 260 910 432"/>
+<path class="pm-path pm-soft p2" stroke="url(#pm-land)" d="M-130 740 C90 910 240 670 320 545 S500 350 620 410 S790 530 910 432"/>
+<path class="pm-path p2" stroke="url(#pm-land)" d="M-130 740 C90 910 240 670 320 545 S500 350 620 410 S790 530 910 432"/>
+<path class="pm-path pm-soft p3" stroke="url(#pm-tide)" d="M-150 400 C80 190 180 300 290 420 S470 590 600 480 S770 350 910 432"/>
+<path class="pm-path p3" stroke="url(#pm-tide)" d="M-150 400 C80 190 180 300 290 420 S470 590 600 480 S770 350 910 432"/></svg><div class="pm-light"></div><div class="pm-point"></div></div>
+<div class="pm-content"><div class="pm-tag">Transformaciones del borde costero</div><h1 class="pm-title" id="problema-titulo">La tierra que retrocede.</h1><p class="pm-copy">La pérdida paulatina de suelo costero por el aumento del mar amenaza con desplazar progresivamente a la población de Tierra Bomba y fragmentar sus modos de vida.</p></div>
+<div class="pm-bottom"><span class="pm-note">Una lectura del territorio y sus relaciones</span><button id="entrar-tierrabomba" type="button">Explorar el territorio &nbsp;↗</button></div></section>
+<script>document.getElementById('entrar-tierrabomba').addEventListener('click',function(){const el=document.getElementById('problema-territorial');el.classList.add('pm-exit');setTimeout(()=>el.remove(),850)});</script>
 <div id="app">
   <header id="top">
     <div class="brand glass">Especies de <b>Tierra Bomba</b></div>
