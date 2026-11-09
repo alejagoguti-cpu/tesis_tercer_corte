@@ -224,6 +224,18 @@ button{font-family:inherit;cursor:pointer}
 @keyframes cm-node-in{from{opacity:0;translate:0 25px;scale:.92}to{opacity:1;translate:0 0;scale:1}}@keyframes cm-float{to{translate:0 -8px}}@keyframes cm-lines{from{opacity:0;stroke-dashoffset:200}to{opacity:.7;stroke-dashoffset:0}}@keyframes cm-dash{to{stroke-dashoffset:-280}}
 @media(max-width:700px){#problema-territorial .cm-map{height:590px}#problema-territorial .cm-node{width:140px;padding:12px;min-height:75px}#problema-territorial .cm-node.center{width:165px}#problema-territorial .cm-node span{font-size:10px}#problema-territorial .cm-node strong{font-size:12px}#problema-territorial .cm-top{padding:18px}#problema-territorial .cm-detail{margin-top:0}}
 @media(prefers-reduced-motion:reduce){#problema-territorial *{animation:none!important;transition:none!important}#problema-territorial .cm-node{opacity:1}}
+
+/* Secuencia narrativa controlada exclusivamente por clic */
+#problema-territorial .cm-node:not(.cm-revealed){opacity:0!important;visibility:hidden;pointer-events:none;animation:none!important}
+#problema-territorial .cm-node.cm-revealed{visibility:visible;opacity:1;animation:cm-step-in .8s cubic-bezier(.2,.8,.2,1) both,cm-float 6s ease-in-out .8s infinite alternate}
+#problema-territorial .cm-links path{opacity:0!important;animation:none!important;stroke-dasharray:800;stroke-dashoffset:800}
+#problema-territorial .cm-links path.cm-revealed{opacity:.7!important;animation:cm-step-line 1.2s ease forwards,cm-dash 14s linear 1.2s infinite}
+#problema-territorial .cm-detail{transition:opacity .3s ease}
+#problema-territorial .cm-footer .cm-next{background:rgba(126,96,216,.35);border-color:#b49af5}
+#problema-territorial .cm-footer .cm-progress{font-size:11px;color:#aaa1c6;letter-spacing:.08em}
+@keyframes cm-step-in{from{opacity:0;translate:0 26px;scale:.9}to{opacity:1;translate:0 0;scale:1}}
+@keyframes cm-step-line{from{stroke-dashoffset:800}to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){#problema-territorial .cm-node.cm-revealed{opacity:1;animation:none!important}#problema-territorial .cm-links path.cm-revealed{stroke-dashoffset:0;animation:none!important}}
 </style>
 </head>
 <body>
@@ -240,9 +252,27 @@ button{font-family:inherit;cursor:pointer}
 <button class="cm-node" style="left:21.5%;top:85%" data-detail="El desplazamiento y la transformación del territorio pueden fragmentar las relaciones y los modos de vida de la comunidad."><strong>Fragmentación de modos de vida</strong><span>Consecuencia sociocultural</span></button>
 </div>
 <p class="cm-detail" id="cm-detail" aria-live="polite">La pérdida paulatina de suelo costero por el aumento del mar amenaza con desplazar progresivamente a la población de Tierra Bomba y fragmentar sus modos de vida.</p>
-<div class="cm-footer"><small>Selecciona un nodo para explorar sus relaciones</small><button id="entrar-tierrabomba" type="button">Explorar territorio 3D ↗</button></div>
+<div class="cm-footer"><small class="cm-progress" id="cm-progress">01 / 06 · Problema central</small><button class="cm-next" id="cm-next" type="button">Descubrir primera relación →</button><button id="entrar-tierrabomba" type="button" hidden>Explorar territorio 3D ↗</button></div>
 </div></section><script>
-(function(){const root=document.getElementById('problema-territorial'),nodes=[...root.querySelectorAll('.cm-node')],detail=root.querySelector('#cm-detail');let active=0;function select(i){nodes.forEach((n,j)=>n.classList.toggle('active',j===i));detail.textContent=nodes[i].dataset.detail;active=i}nodes.forEach((n,i)=>n.addEventListener('click',()=>select(i)));select(0);let t=setInterval(()=>{if(!document.body.contains(root)){clearInterval(t);return}select((active+1)%nodes.length)},4400);root.querySelector('#entrar-tierrabomba').addEventListener('click',()=>{clearInterval(t);root.classList.add('cm-exit');setTimeout(()=>root.remove(),800)})})();
+(function(){
+const root=document.getElementById('problema-territorial');
+const nodes=[...root.querySelectorAll('.cm-node')],paths=[...root.querySelectorAll('.cm-links path')];
+const detail=root.querySelector('#cm-detail'),next=root.querySelector('#cm-next'),progress=root.querySelector('#cm-progress'),enter=root.querySelector('#entrar-tierrabomba');
+let shown=1;
+function focus(i){nodes.forEach((n,j)=>n.classList.toggle('active',j===i));detail.textContent=nodes[i].dataset.detail}
+function update(){
+nodes.forEach((n,i)=>n.classList.toggle('cm-revealed',i<shown));
+paths.forEach((p,i)=>p.classList.toggle('cm-revealed',i<shown-1));
+focus(shown-1);
+progress.textContent=String(shown).padStart(2,'0')+' / 06 · '+(shown===6?'Diagrama completo':'Construyendo relaciones');
+if(shown===6){next.hidden=true;enter.hidden=false}
+else{next.textContent=shown===1?'Descubrir primera relación →':'Revelar siguiente relación →'}
+}
+nodes.forEach((n,i)=>n.addEventListener('click',()=>{if(i<shown)focus(i)}));
+next.addEventListener('click',()=>{if(shown<nodes.length){shown++;update()}});
+enter.addEventListener('click',()=>{root.classList.add('cm-exit');setTimeout(()=>root.remove(),800)});
+update();
+})();
 </script>
 <div id="app">
   <header id="top">
