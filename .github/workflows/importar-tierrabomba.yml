@@ -1,8 +1,5 @@
 name: Importar Tierra Bomba
 on:
-  push:
-    paths:
-      - '.github/workflows/importar-tierrabomba.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -10,21 +7,21 @@ jobs:
   copiar:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout destino
+      - name: Checkout del repositorio de destino
         uses: actions/checkout@v4
         with:
           persist-credentials: true
-      - name: Descargar proyecto original
+      - name: Descargar repositorio de origen
         run: git clone --depth 1 https://github.com/anasoficasca-code/tierrabomba.git /tmp/tierrabomba-original
-      - name: Copiar sin modificar el original
+      - name: Copiar y verificar archivos sin alterar el origen
+        shell: bash
         run: |
-          cp -a /tmp/tierrabomba-original/. ./
-          rm -rf .git
-          git init
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/alejagoguti-cpu/tesis_tercer_corte.git
-          git checkout -b main
+          rsync -a --exclude='.git' /tmp/tierrabomba-original/ ./
+          for p in index.html assets/data/especies.json assets/modelo/tierrabomba_revit.glb assets/texturas/tierrabomba_satelite.jpg; do
+            test -f "$p" || exit 1
+          done
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m "Importar proyecto completo Tierra Bomba"
-          git push --force origin main
+          git diff --cached --quiet || git commit -m 'Copiar Tierra Bomba completo desde repositorio original'
+          git push origin HEAD:main
