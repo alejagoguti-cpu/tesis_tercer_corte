@@ -1,0 +1,30 @@
+name: Importar Tierra Bomba
+on:
+  push:
+    paths:
+      - '.github/workflows/importar-tierrabomba.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  copiar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout destino
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Descargar proyecto original
+        run: git clone --depth 1 https://github.com/anasoficasca-code/tierrabomba.git /tmp/tierrabomba-original
+      - name: Copiar sin modificar el original
+        run: |
+          cp -a /tmp/tierrabomba-original/. ./
+          rm -rf .git
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/alejagoguti-cpu/tesis_tercer_corte.git
+          git checkout -b main
+          git add -A
+          git commit -m "Importar proyecto completo Tierra Bomba"
+          git push --force origin main

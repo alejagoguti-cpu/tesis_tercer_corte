@@ -1,0 +1,12 @@
+Especies de la isla de Tierra Bomba
+
+REGISTROS DE ESPECIES  assets/data/especies.json, assets/fotos/
+  iNaturalist (export observations-802940, 729 registros, 436 taxones). Nombres comunes en español
+  de la API de iNaturalist. Fotos: registros de iNaturalist, cada una bajo la licencia de su autor.
+
+IMAGEN SATELITAL  assets/texturas/
+  Esri World Imagery (Esri, Maxar, Earthstar Geographics y la comunidad GIS). Uso académico con atribución.
+
+MODELO 3D, VEGETACIÓN Y GEORREFERENCIACIÓN  assets/modelo/, assets/data/
+  Tomados del repositorio de la tesis https://github.com/alejagoguti-cpu/tesis
+  Árboles: Island Tree 01 y 02 (Poly Haven, CC0).
