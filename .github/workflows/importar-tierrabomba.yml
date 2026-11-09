@@ -20,6 +20,7 @@ jobs:
           for p in index.html assets/data/especies.json assets/modelo/tierrabomba_revit.glb assets/texturas/tierrabomba_satelite.jpg; do
             test -f "$p" || exit 1
           done
+          python3 .github/scripts/introduccion.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
