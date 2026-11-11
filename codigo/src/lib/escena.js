@@ -756,7 +756,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     {
       uTime: { value: 0 }, uNormals: { value: normals }, uShore: { value: shoreTex }, uSun: { value: sunDir.clone() },
       uWin: { value: new THREE.Vector4(txc - tx0, tyc - ty0, tx1 - tx0, ty1 - ty0) }, uMpt: { value: mpt },
-      uDeep: { value: new THREE.Color(0x04263f) }, uMid: { value: new THREE.Color(0x0b4e6e) }, uShallow: { value: new THREE.Color(0x3a8a8c) },
+      uDeep: { value: new THREE.Color(0x02151f) }, uMid: { value: new THREE.Color(0x07323f) }, uShallow: { value: new THREE.Color(0x2a5f60) },
       uHorizon: { value: new THREE.Color(0xa9cfdc) }, uZenith: { value: new THREE.Color(0x2c6fb0) },
     },
   ]);
@@ -805,14 +805,14 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         float sh = exp(-dm / 55.0) * borde;
         dm = mix(900.0, dm, borde);
         vec3 body = mix(uDeep, uMid, 1.0 - smoothstep(0.0, 350.0, dm));
-        body = mix(body, uShallow, sh * 0.5);
+        body = mix(body, uShallow, sh * 0.4);
         // luz que atraviesa el agua (se ve más clara de cara al sol y en las crestas)
         float sunUp = max(uSun.y, 0.0);
-        body *= 0.75 + 0.5 * sunUp + 0.18 * (n2.x + n2.y);
-        vec3 col = mix(body, sky, clamp(F, 0.0, 1.0) * (0.55 + 0.45 * smoothstep(0.0, 0.5, 1.0 - cosT)));
+        body *= 0.6 + 0.3 * sunUp + 0.14 * (n2.x + n2.y);
+        vec3 col = mix(body, sky * 0.8, clamp(F, 0.0, 1.0) * (0.5 + 0.5 * smoothstep(0.0, 0.5, 1.0 - cosT)));
         // brillo del sol sobre las olas
         float sd = max(dot(R, uSun), 0.0);
-        col += vec3(1.0, 0.93, 0.8) * (pow(sd, 1400.0) * 10.0 + pow(sd, 260.0) * 0.35);
+        col += vec3(1.0, 0.93, 0.8) * (pow(sd, 1600.0) * 8.0 + pow(sd, 300.0) * 0.2);
         // espuma en la orilla
         float ws = 0.5 + 0.5 * sin(dm / 6.0 - uTime * 1.2 + n2.x * 3.0);
         float rompe = (1.0 - smoothstep(0.0, 26.0, dm)) * (0.45 + 0.55 * ws) * inWin;
