@@ -6,10 +6,11 @@ Sitio: https://alejagoguti-cpu.github.io/tesis_tercer_corte/
 
 ## Qué cuenta
 
-1. **El problema**: la formulación de la tesis.
-2. **Si no se frena la erosión**: la costa retrocede 1,8 m/año (tasa máxima registrada en el proyecto) a 10, 20 y 30 años. Se ve la tierra que se pierde, las viviendas que desaparecen y cómo quedaría la isla.
-3. **Las vías**: toda la red vial cartografiada en OpenStreetMap, en 3D sobre el relieve.
-4. **Sintaxis espacial**: integración y elección angular de las redes peatonal y de motos, acceso a los muelles, y el cruce de esas redes con la erosión.
+1. **El problema**: la formulación de la tesis y una red de relaciones que se revela con cada clic.
+2. **Lo social**: percepciones y datos locales en diagramas (encuesta a 238 habitantes, convivencia, escuela y conexiones). Las cifras vienen de las fuentes citadas en la página.
+3. **Si no se frena la erosión**: la costa retrocede 1,8 m/año (tasa máxima registrada en el proyecto) a 10, 20 y 30 años. Se ve la tierra que se pierde, las viviendas que desaparecen y cómo quedaría la isla.
+4. **Las vías**: toda la red vial cartografiada en OpenStreetMap, en 3D sobre el relieve.
+5. **Sintaxis espacial**: integración y elección angular de las redes peatonal y de motos, acceso a los muelles con Cartagena como contexto, y el cruce de esas redes con la erosión.
 
 ## Cómo se hizo la sintaxis espacial
 

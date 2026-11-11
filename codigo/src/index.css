@@ -85,3 +85,43 @@ body {
     .progreso-nativo { animation: crece linear both; animation-timeline: scroll(root); }
   }
 }
+
+/* red conceptual */
+.red-nodo {
+  --mwnodo: 4.9rem;
+  width: calc(var(--mwnodo) * 2);
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; text-align: left;
+  padding: 0.7rem 0.75rem 0.65rem;
+  background: #101a22; color: #f4f1ec;
+  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 4px;
+  cursor: pointer; transition: border-color 0.3s, box-shadow 0.4s, background 0.3s;
+}
+@media (min-width: 640px) { .red-nodo { --mwnodo: 7rem; padding: 0.9rem 1rem 0.85rem; } }
+.red-nodo strong { font-size: 0.8rem; font-weight: 600; line-height: 1.25; }
+.red-nodo small { font-size: 0.66rem; line-height: 1.3; color: rgba(244, 241, 236, 0.55); }
+@media (min-width: 640px) { .red-nodo strong { font-size: 0.95rem; } .red-nodo small { font-size: 0.72rem; } }
+.red-nodo:hover { border-color: #e0917a; }
+.red-nodo[aria-pressed='true'] { border-color: #c86d51; background: #1a1f26; box-shadow: 0 0 0 1px #c86d51, 0 18px 44px -14px rgba(200, 109, 81, 0.55); }
+.red-nodo:focus-visible { outline: 2px solid #e0917a; outline-offset: 3px; }
+.red-centro { --mwnodo: 5.2rem; width: 10.4rem; background: #17222b; border-color: rgba(200, 109, 81, 0.7); }
+@media (min-width: 640px) { .red-centro { width: 14.5rem; } }
+.red-oculto { opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, -50%) scale(0.86); }
+.red-visto { animation: nodo-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both, flotar 6.5s ease-in-out 1s infinite alternate; }
+@keyframes nodo-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 22px)) scale(0.9); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes flotar { from { translate: 0 0; } to { translate: 0 -7px; } }
+.red-anillo { position: absolute; inset: -1px; border: 1px solid rgba(200, 109, 81, 0.6); border-radius: 4px; pointer-events: none; animation: anillo 3.6s ease-out infinite; }
+.red-anillo-2 { animation-delay: 1.8s; }
+@keyframes anillo { from { transform: scale(1); opacity: 0.8; } to { transform: scale(1.22, 1.5); opacity: 0; } }
+.red-enlace-base, .red-enlace { fill: none; vector-effect: non-scaling-stroke; }
+.red-enlace-base { stroke: rgba(255, 255, 255, 0.1); stroke-width: 1.2; }
+.red-enlace { stroke-width: 2; stroke-dasharray: 1; transition: stroke-dashoffset 1.3s cubic-bezier(0.65, 0, 0.35, 1); }
+.red-boton { height: 2.6rem; padding: 0 1.2rem; border: 1px solid #f4f1ec; background: transparent; color: #f4f1ec; font-size: 0.85rem; font-weight: 600; border-radius: 3px; cursor: pointer; transition: background 0.25s, color 0.25s; }
+.red-boton:hover { background: #f4f1ec; color: #0b1015; }
+.red-boton-fin { background: #c86d51; border-color: #c86d51; color: #fff; }
+.red-boton-fin:hover { background: #e0917a; border-color: #e0917a; color: #0b1015; }
+@media (prefers-reduced-motion: reduce) {
+  .red-visto { animation: none; opacity: 1; visibility: visible; }
+  .red-anillo { animation: none; display: none; }
+  .red-enlace { transition: none; }
+}

@@ -31,3 +31,8 @@ SINTAXIS ESPACIAL  codigo/scripts/space_syntax.mjs
 EROSION
   Escenario ilustrativo: retroceso uniforme de 1,8 m/ano (tasa maxima registrada en el proyecto) sobre la silueta
   oficial de la isla. La erosion real varia por tramo.
+
+DATOS SOCIALES  (capitulo Lo social)
+  Encuesta a 238 habitantes (2016, publicada en 2017), Universidad de Manizales; talleres de memoria de la Universidad Tecnologica de Bolivar;
+  Caracol Radio (2018); Reporteros Asociados (2017); SED Cartagena (PACSE 2025); Cartagena Como Vamos (Informe de Calidad de Vida 2022);
+  ESE Cartagena de Indias (2022); Armada Nacional (2021); estudio de transporte acuatico de Cartagena (2014). Enlaces en la pagina.

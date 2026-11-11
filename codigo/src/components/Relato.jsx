@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gradienteCSS } from '../lib/paleta.js';
 import { GRUPOS_TIPO, TASA } from '../lib/escena.js';
+import Red from './Red.jsx';
+import Social from './Social.jsx';
 
 const fmt = (n, d = 0) => n.toLocaleString('es-CO', { minimumFractionDigits: d, maximumFractionDigits: d });
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -9,13 +11,21 @@ const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2);
 const PROBLEMA =
   'La pérdida paulatina de suelo costero por el aumento del mar amenaza con desplazar progresivamente a la población de Tierra Bomba y fragmentar sus modos de vida.';
 
+const NODOS_PROBLEMA = [
+  { titulo: 'Aumento del nivel del mar', sub: 'Factor de presión', icono: 'mar', pos: [21.5, 18.3], detalle: 'El aumento del nivel del mar es el factor que se plantea como impulsor del problema.' },
+  { titulo: 'Retroceso del borde', sub: 'Transformación territorial', icono: 'borde', pos: [79, 19.2], detalle: 'La pérdida progresiva de superficie costera transforma las condiciones de ocupación del territorio.' },
+  { titulo: 'Presión sobre los asentamientos', sub: 'Exposición de la población', icono: 'casas', pos: [82.5, 58.3], detalle: 'La reducción del suelo habitable puede generar presión sobre los asentamientos de la isla.' },
+  { titulo: 'Riesgo de desplazamiento', sub: 'Consecuencia social', icono: 'riesgo', pos: [72, 87.5], detalle: 'El problema plantea una amenaza de desplazamiento progresivo, no una cifra verificada de personas desplazadas.' },
+  { titulo: 'Fragmentación de modos de vida', sub: 'Consecuencia sociocultural', icono: 'tejido', pos: [21.5, 85], detalle: 'El desplazamiento y la transformación del territorio pueden fragmentar las relaciones y los modos de vida de la comunidad.' },
+];
 const CAPITULOS = [
   { id: 'portada', n: '00', nombre: 'Portada' },
   { id: 'problema', n: '01', nombre: 'El problema' },
-  { id: 'erosion', n: '02', nombre: 'Si no se frena la erosión' },
-  { id: 'vias', n: '03', nombre: 'Las vías' },
-  { id: 'sintaxis', n: '04', nombre: 'Sintaxis espacial' },
-  { id: 'cierre', n: '05', nombre: 'Lo que sigue' },
+  { id: 'social', n: '02', nombre: 'Lo social' },
+  { id: 'erosion', n: '03', nombre: 'Si no se frena la erosión' },
+  { id: 'vias', n: '04', nombre: 'Las vías' },
+  { id: 'sintaxis', n: '05', nombre: 'Sintaxis espacial' },
+  { id: 'cierre', n: '06', nombre: 'Lo que sigue' },
 ];
 
 const RADIOS = [
@@ -30,9 +40,9 @@ const PASOS = [
   { id: 'pea-ele', corto: 'Peatonal · Elección', grupo: 'Red peatonal', titulo: 'Elección', red: 'peatonal', capa: 'nach', medida: 'nach' },
   { id: 'mot-int', corto: 'Motos · Integración', grupo: 'Red de motos', titulo: 'Integración', red: 'motos', capa: 'nain', medida: 'nain' },
   { id: 'mot-ele', corto: 'Motos · Elección', grupo: 'Red de motos', titulo: 'Elección', red: 'motos', capa: 'nach', medida: 'nach' },
-  { id: 'mu-dist', corto: 'Lanchas · Acceso a muelles', grupo: 'Lanchas', titulo: 'Acceso a los muelles', red: 'peatonal', capa: 'muelle_dist', rutas: 1 },
-  { id: 'mu-ele', corto: 'Lanchas · Elección a muelles', grupo: 'Lanchas', titulo: 'Elección hacia los muelles', red: 'peatonal', capa: 'muelle_ch', rutas: 1 },
-  { id: 'rutas', corto: 'Lanchas · Rutas', grupo: 'Lanchas', titulo: 'Rutas de lancha', red: 'peatonal', capa: 'tipo', calles: 0.22, rutas: 1, cam: 'lancha' },
+  { id: 'mu-dist', corto: 'Lanchas · Acceso a muelles', grupo: 'Lanchas', titulo: 'Acceso a los muelles', red: 'peatonal', capa: 'muelle_dist', rutas: 1, cam: 'lancha', contexto: 1 },
+  { id: 'mu-ele', corto: 'Lanchas · Elección a muelles', grupo: 'Lanchas', titulo: 'Elección hacia los muelles', red: 'peatonal', capa: 'muelle_ch', rutas: 1, cam: 'lancha', contexto: 1 },
+  { id: 'rutas', corto: 'Lanchas · Rutas', grupo: 'Lanchas', titulo: 'Rutas de lancha', red: 'peatonal', capa: 'tipo', calles: 0.22, rutas: 1, cam: 'lancha', contexto: 1 },
   { id: 'riesgo', corto: 'La erosión sobre las redes', grupo: 'Erosión + redes', titulo: 'La erosión sobre las redes', capa: 'riesgo' },
 ];
 const ALTO_PASO = 95; // svh por paso
@@ -123,7 +133,7 @@ function PanelErosion({ stats, anio, modo }) {
   const m = TASA * anio;
   return (
     <aside className={`${contenedorPanel} entra`} aria-live="polite">
-      <p className="etiqueta text-arcilla">02 · Si no se frena la erosión</p>
+      <p className="etiqueta text-arcilla">03 · Si no se frena la erosión</p>
       <div className="mt-3 flex items-end justify-between gap-4">
         <p className="num text-5xl font-semibold leading-none tracking-tight">
           {anio === 0 ? 'Hoy' : `+${anio}`}
@@ -182,7 +192,7 @@ function PanelVias({ stats, datos }) {
   const porGrupo = GRUPOS_TIPO.map((g) => ({ ...g, km: g.tipos.reduce((s, t) => s + (stats.porTipo.peatonal[t] || 0), 0) }));
   return (
     <aside className={`${contenedorPanel} entra`}>
-      <p className="etiqueta text-arcilla">03 · Todas las vías</p>
+      <p className="etiqueta text-arcilla">04 · Todas las vías</p>
       <p className="num mt-3 text-5xl font-semibold leading-none tracking-tight">{fmt(km, 1)}<span className="ml-2 text-base font-normal text-white/55">km</span></p>
       <p className="mt-2 text-[13px] text-white/70">de vías cartografiadas sobre la isla, en {fmt(p.segmentos)} tramos.</p>
       <ul className="mt-4 space-y-2 border-t border-white/14 pt-3">
@@ -210,7 +220,7 @@ function PanelSintaxis({ paso, datos, stats, ctrl, setCtrl }) {
 
   const encabezado = (
     <>
-      <p className="etiqueta text-arcilla">04 · Sintaxis espacial · {paso.grupo}</p>
+      <p className="etiqueta text-arcilla">05 · Sintaxis espacial · {paso.grupo}</p>
       <h3 className="mt-2 text-2xl font-semibold leading-tight tracking-tight sm:text-[1.7rem]">{paso.titulo}</h3>
     </>
   );
@@ -275,7 +285,7 @@ function PanelSintaxis({ paso, datos, stats, ctrl, setCtrl }) {
       <>
         <p className="mt-3 text-[13px] leading-relaxed text-white/80">
           {paso.id === 'mu-dist'
-            ? `Se tomaron los ${mu.puntos.length} muelles y espolones de OpenStreetMap que quedan a menos de 120 m de la red peatonal. En color, la distancia por la red al muelle más cercano.`
+            ? `Cartagena aparece al norte, con la bahía entre la ciudad y la isla. Se tomaron los ${mu.puntos.length} muelles y espolones de OpenStreetMap que quedan a menos de 120 m de la red peatonal. En color, la distancia por la red al muelle más cercano.`
             : 'Cuántos recorridos directos, desde todos los tramos de la isla hacia un muelle, pasan por cada tramo.'}
         </p>
         <div className="mt-4"><Leyenda izquierda={paso.id === 'mu-dist' ? 'Lejos' : 'Poco usado'} derecha={paso.id === 'mu-dist' ? 'Cerca' : 'Más usado'} /></div>
@@ -400,7 +410,7 @@ function Cierre({ api }) {
   return (
     <section id="cierre" className="relative bg-papel text-tinta">
       <div className="mx-auto max-w-6xl px-5 py-24 sm:px-10 sm:py-32">
-        <p className="etiqueta text-arcilla">05 · Lo que sigue</p>
+        <p className="etiqueta text-arcilla">06 · Lo que sigue</p>
         <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">Lo que muestran los números, y lo que falta.</h2>
 
         <div className="mt-14 grid gap-12 lg:grid-cols-2">
@@ -474,7 +484,7 @@ export default function Relato({ api, sinEscena }) {
     if (!a) return;
     const { cap: c, pasoIdx: pi, p } = S.current;
     const k = ctrlRef.current;
-    const base = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0 };
+    const base = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0 };
     let est = base;
     if (c === 'portada') est = base;
     else if (c === 'problema') est = { ...base, cam: 'problema', dim: 0.1 };
@@ -486,10 +496,10 @@ export default function Relato({ api, sinEscena }) {
       const ps = PASOS[pi];
       est = {
         ...base, cam: ps.cam || 'vias', red: ps.red || k.redRiesgo, capa: ps.capa, radio: k.radio,
-        calles: ps.calles ?? 1, casas: 0, dim: 0.55, rutas: ps.rutas || 0,
+        calles: ps.calles ?? 1, casas: 0, dim: 0.55, rutas: ps.rutas || 0, contexto: ps.contexto || 0,
       };
       if (ps.id === 'riesgo') est = { ...est, year: k.anioRiesgo, modo: 'perdida', dim: 0.3, red: k.redRiesgo };
-    } else est = { ...base, cam: 'isla', dim: 0.5 };
+    } else est = { ...base, cam: 'isla', dim: 0.5 }; // social y cierre
     a.set(est);
   }, []);
 
@@ -564,16 +574,30 @@ export default function Relato({ api, sinEscena }) {
         </div>
       </section>
 
-      {/* 01 · problema */}
-      <section id="problema" className="relative flex min-h-[150svh] items-center">
-        <div className="absolute inset-0 bg-tinta/45" />
-        <div className="relative w-full max-w-[44rem] px-5 py-24 sm:px-12 lg:ml-[5vw]">
-          <p className="etiqueta text-arcilla">01 · Formulación del problema</p>
-          <ScrollWords text={PROBLEMA} className="mt-6 text-3xl font-semibold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl" />
-          {sinEscena && <p className="mt-8 text-sm text-white/60">Este dispositivo no pudo mostrar la vista 3D; se muestra la imagen satelital y los datos.</p>}
+      {/* 01 · problema: enunciado + red de relaciones */}
+      <section id="problema" className="relative">
+        <div className="relative flex min-h-[130svh] items-center">
+          <div className="absolute inset-0 bg-tinta/45" />
+          <div className="relative w-full max-w-[44rem] px-5 py-24 sm:px-12 lg:ml-[5vw]">
+            <p className="etiqueta text-arcilla">01 · Formulación del problema</p>
+            <ScrollWords text={PROBLEMA} className="mt-6 text-3xl font-semibold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl" />
+            {sinEscena && <p className="mt-8 text-sm text-white/60">Este dispositivo no pudo mostrar la vista 3D; se muestra la imagen satelital y los datos.</p>}
+          </div>
+        </div>
+        <div className="relative bg-tinta/88 px-5 py-20 backdrop-blur-sm sm:px-12 sm:py-28">
+          <Red
+            etiqueta="Sistema de relaciones"
+            titulo="La tierra que retrocede."
+            centro={{ titulo: 'Pérdida de suelo costero', sub: 'Problema central', icono: 'suelo', detalle: PROBLEMA }}
+            nodos={NODOS_PROBLEMA}
+            textoFinal="Ver cómo lo viven ↓"
+            alFinal={() => document.getElementById('social')?.scrollIntoView({ behavior: 'smooth' })}
+          />
         </div>
       </section>
 
+      {/* 02 · lo social */}
+      <Social />
       {/* 02 · erosión (la escena la mueve el scroll) */}
       <section id="erosion" style={{ height: '520svh' }} aria-label="Simulación de la erosión a 10, 20 y 30 años" />
       {/* 03 · vías */}
