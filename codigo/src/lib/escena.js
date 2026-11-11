@@ -731,10 +731,100 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   normals.wrapS = normals.wrapT = THREE.RepeatWrapping;
   normals.repeat.set(900, 900);
   normals.needsUpdate = true;
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(200000, 200000),
-    new THREE.MeshStandardMaterial({ color: 0x0a4f80, roughness: 0.62, metalness: 0, normalMap: normals, normalScale: new THREE.Vector2(0.35, 0.35) })
-  );
+  // distancia del mar a la costa (m), a 1/4 de resolución: aguas someras turquesa, espuma en la orilla y agua profunda lejos
+  const SH = 4;
+  const sw = Math.ceil(W / SH); const sh2 = Math.ceil(H / SH);
+  const marArr = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) marArr[i] = land[i] ? 0 : 1;
+  const sqMar = edt(W, H, marArr);
+  const shoreData = new Uint8Array(sw * sh2 * 4);
+  for (let y = 0; y < sh2; y++) {
+    for (let x = 0; x < sw; x++) {
+      const dm = Math.sqrt(sqMar[Math.min(H - 1, y * SH) * W + Math.min(W - 1, x * SH)]) * mpp;
+      const o = (y * sw + x) * 4;
+      shoreData[o] = Math.round(255 * Math.min(1, dm / 900)); // distancia normalizada (900 m)
+      shoreData[o + 3] = 255;
+    }
+  }
+  const shoreTex = new THREE.DataTexture(shoreData, sw, sh2, THREE.RGBAFormat);
+  shoreTex.minFilter = shoreTex.magFilter = THREE.LinearFilter;
+  shoreTex.wrapS = shoreTex.wrapT = THREE.ClampToEdgeWrapping;
+  shoreTex.generateMipmaps = false;
+  shoreTex.needsUpdate = true;
+  const waterUniforms = THREE.UniformsUtils.merge([
+    THREE.UniformsLib.fog,
+    {
+      uTime: { value: 0 }, uNormals: { value: normals }, uShore: { value: shoreTex }, uSun: { value: sunDir.clone() },
+      uWin: { value: new THREE.Vector4(txc - tx0, tyc - ty0, tx1 - tx0, ty1 - ty0) }, uMpt: { value: mpt },
+      uDeep: { value: new THREE.Color(0x04263f) }, uMid: { value: new THREE.Color(0x0a5f86) }, uShallow: { value: new THREE.Color(0x25b5b0) },
+      uHorizon: { value: new THREE.Color(0xa9cfdc) }, uZenith: { value: new THREE.Color(0x2c6fb0) },
+    },
+  ]);
+  const waterMat = new THREE.ShaderMaterial({
+    uniforms: waterUniforms,
+    fog: true,
+    vertexShader: `
+      varying vec3 vWorld;
+      #include <fog_pars_vertex>
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorld = wp.xyz;
+        vec4 mvPosition = viewMatrix * wp;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: `
+      uniform float uTime; uniform sampler2D uNormals; uniform sampler2D uShore; uniform vec3 uSun; uniform vec4 uWin; uniform float uMpt;
+      uniform vec3 uDeep; uniform vec3 uMid; uniform vec3 uShallow; uniform vec3 uHorizon; uniform vec3 uZenith;
+      varying vec3 vWorld;
+      #include <fog_pars_fragment>
+      vec2 nm(vec2 p) { return texture2D(uNormals, p).rg * 2.0 - 1.0; }
+      void main() {
+        float dc = length(cameraPosition - vWorld);
+        vec2 p = vWorld.xz;
+        float lod = 1.0 - smoothstep(250.0, 2600.0, dc);
+        vec2 n2 = nm(p / 180.0 + vec2(uTime * 0.012, uTime * 0.008)) * 0.9
+                + nm(p / 61.0 + vec2(-uTime * 0.02, uTime * 0.013)) * 0.7
+                + nm(p / 17.0 + vec2(uTime * 0.035, -uTime * 0.03)) * 0.55 * lod
+                + nm(p / 5.3 + vec2(-uTime * 0.05, uTime * 0.045)) * 0.3 * lod;
+        float k = mix(0.16, 0.32, lod);
+        vec3 n = normalize(vec3(n2.x * k, 1.0, n2.y * k));
+        vec3 V = normalize(cameraPosition - vWorld);
+        float cosT = max(dot(n, V), 0.0);
+        float F = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
+        vec3 R = reflect(-V, n);
+        R.y = abs(R.y);
+        vec3 sky = mix(uHorizon, uZenith, pow(clamp(R.y, 0.0, 1.0), 0.45));
+        // costa: distancia del mar a la tierra
+        vec2 uv = vec2((vWorld.x / uMpt + uWin.x) / uWin.z, (vWorld.z / uMpt + uWin.y) / uWin.w);
+        float inWin = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+        float dm = texture2D(uShore, clamp(uv, 0.0, 1.0)).r * 900.0;
+        dm = mix(900.0, dm, inWin);
+        vec2 eb = min(uv, 1.0 - uv);
+        float borde = smoothstep(0.0, 0.05, min(eb.x, eb.y));
+        float sh = exp(-dm / 110.0) * mix(0.0, 1.0, borde);
+        dm = mix(900.0, dm, borde);
+        vec3 body = mix(uDeep, uMid, 1.0 - smoothstep(0.0, 500.0, dm));
+        body = mix(body, uShallow, sh * 0.7);
+        // luz que atraviesa el agua (se ve más clara de cara al sol y en las crestas)
+        float sunUp = max(uSun.y, 0.0);
+        body *= 0.75 + 0.5 * sunUp + 0.18 * (n2.x + n2.y);
+        vec3 col = mix(body, sky, clamp(F, 0.0, 1.0) * (0.55 + 0.45 * smoothstep(0.0, 0.5, 1.0 - cosT)));
+        // brillo del sol sobre las olas
+        float sd = max(dot(R, uSun), 0.0);
+        col += vec3(1.0, 0.93, 0.8) * (pow(sd, 1400.0) * 10.0 + pow(sd, 260.0) * 0.35);
+        // espuma en la orilla
+        float ws = 0.5 + 0.5 * sin(dm / 6.0 - uTime * 1.2 + n2.x * 3.0);
+        float rompe = (1.0 - smoothstep(0.0, 26.0, dm)) * (0.45 + 0.55 * ws) * inWin;
+        float rastro = (1.0 - smoothstep(18.0, 70.0, dm)) * smoothstep(0.78, 1.0, 0.5 + 0.5 * sin(dm / 9.0 - uTime * 0.7 + n2.y * 4.0)) * 0.35 * inWin;
+        col = mix(col, vec3(0.94, 0.98, 0.98), clamp(rompe * 0.8 + rastro, 0.0, 0.9));
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }`,
+  });
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000), waterMat);
   water.rotation.x = -Math.PI / 2;
   scene.add(water);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
@@ -1464,6 +1554,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     ctxMat.opacity = cur.contexto;
     etiquetas.visible = cur.contexto > 0.05;
     etiquetas.children.forEach((s) => { s.material.opacity = cur.contexto; });
+    waterUniforms.uTime.value = t;
     for (const k of PLAN_KEYS) planT[k] = (T.plan && T.plan[k]) || 0;
     actualizarPlan(dt, t, cur.escala);
     renderer.render(scene, camera);
