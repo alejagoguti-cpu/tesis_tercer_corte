@@ -756,7 +756,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     {
       uTime: { value: 0 }, uNormals: { value: normals }, uShore: { value: shoreTex }, uSun: { value: sunDir.clone() },
       uWin: { value: new THREE.Vector4(txc - tx0, tyc - ty0, tx1 - tx0, ty1 - ty0) }, uMpt: { value: mpt },
-      uDeep: { value: new THREE.Color(0x04263f) }, uMid: { value: new THREE.Color(0x0a5f86) }, uShallow: { value: new THREE.Color(0x25b5b0) },
+      uDeep: { value: new THREE.Color(0x04263f) }, uMid: { value: new THREE.Color(0x0b4e6e) }, uShallow: { value: new THREE.Color(0x3a8a8c) },
       uHorizon: { value: new THREE.Color(0xa9cfdc) }, uZenith: { value: new THREE.Color(0x2c6fb0) },
     },
   ]);
@@ -802,10 +802,10 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         dm = mix(900.0, dm, inWin);
         vec2 eb = min(uv, 1.0 - uv);
         float borde = smoothstep(0.0, 0.05, min(eb.x, eb.y));
-        float sh = exp(-dm / 110.0) * mix(0.0, 1.0, borde);
+        float sh = exp(-dm / 55.0) * borde;
         dm = mix(900.0, dm, borde);
-        vec3 body = mix(uDeep, uMid, 1.0 - smoothstep(0.0, 500.0, dm));
-        body = mix(body, uShallow, sh * 0.7);
+        vec3 body = mix(uDeep, uMid, 1.0 - smoothstep(0.0, 350.0, dm));
+        body = mix(body, uShallow, sh * 0.5);
         // luz que atraviesa el agua (se ve más clara de cara al sol y en las crestas)
         float sunUp = max(uSun.y, 0.0);
         body *= 0.75 + 0.5 * sunUp + 0.18 * (n2.x + n2.y);
@@ -817,7 +817,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         float ws = 0.5 + 0.5 * sin(dm / 6.0 - uTime * 1.2 + n2.x * 3.0);
         float rompe = (1.0 - smoothstep(0.0, 26.0, dm)) * (0.45 + 0.55 * ws) * inWin;
         float rastro = (1.0 - smoothstep(18.0, 70.0, dm)) * smoothstep(0.78, 1.0, 0.5 + 0.5 * sin(dm / 9.0 - uTime * 0.7 + n2.y * 4.0)) * 0.35 * inWin;
-        col = mix(col, vec3(0.94, 0.98, 0.98), clamp(rompe * 0.8 + rastro, 0.0, 0.9));
+        col = mix(col, vec3(0.82, 0.88, 0.88), clamp(rompe * 0.45 + rastro * 0.5, 0.0, 0.5));
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
