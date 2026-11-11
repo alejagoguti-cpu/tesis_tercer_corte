@@ -3,6 +3,8 @@ import { gradienteCSS } from '../lib/paleta.js';
 import { GRUPOS_TIPO, TASA, nivelModelo, RUNUP_M, OLEAJE } from '../lib/escena.js';
 import Red from './Red.jsx';
 import Social from './Social.jsx';
+import { PLAN_PASOS, planEstado, SeccionEsquema } from './Plan.jsx';
+import { PROGRAMA, PARQUE_RADIOS, HUMEDAL_RADIOS } from '../lib/plan.js';
 
 const fmt = (n, d = 0) => n.toLocaleString('es-CO', { minimumFractionDigits: d, maximumFractionDigits: d });
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -25,7 +27,9 @@ const CAPITULOS = [
   { id: 'erosion', n: '03', nombre: 'Si no se frena la erosión' },
   { id: 'vias', n: '04', nombre: 'Las vías' },
   { id: 'sintaxis', n: '05', nombre: 'Sintaxis espacial' },
-  { id: 'cierre', n: '06', nombre: 'Lo que sigue' },
+  { id: 'plan', n: '06', nombre: 'Plan maestro' },
+  { id: 'esquema', n: '06', nombre: 'Esquema y criterios' },
+  { id: 'cierre', n: '07', nombre: 'Lo que sigue' },
 ];
 
 const RADIOS = [
@@ -104,7 +108,7 @@ function Ranking({ titulo, items }) {
 /* ---------- cabecera ---------- */
 function Cabecera({ cap }) {
   const actual = CAPITULOS.find((c) => c.id === cap) || CAPITULOS[0];
-  const claro = cap === 'cierre';
+  const claro = cap === 'cierre' || cap === 'esquema';
   return (
     <header className={`pointer-events-none fixed inset-x-0 top-0 z-30 pb-6 ${claro ? 'bg-papel/90 backdrop-blur-sm' : 'bg-gradient-to-b from-tinta/80 via-tinta/35 to-transparent'}`}>
       <div className={`flex items-start justify-between gap-4 px-4 pt-4 sm:px-8 sm:pt-5 ${claro ? 'text-tinta/70' : 'text-white/75 [text-shadow:0_1px_12px_rgba(0,0,0,.6)]'}`}>
@@ -411,6 +415,98 @@ function Indice({ activo, onIr }) {
   );
 }
 
+/* ---------- plan maestro ---------- */
+function PanelPlan({ paso, idx, stats, version }) {
+  const m = stats.plan.meseta;
+  const casasFranja = stats.casas[30];
+  const parqueHa = Math.PI * PARQUE_RADIOS[0] * PARQUE_RADIOS[1] / 10000;
+  const humedalHa = Math.PI * HUMEDAL_RADIOS[0] * HUMEDAL_RADIOS[1] / 10000;
+  const cuerpos = [
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        En rojo, la franja que el mar se llevaría en 30 años ({fmt(stats.ha[30], 0)} ha). Defenderla con obra dura es incierto y costoso; la tesis propone lo contrario: dejar de ocupar ese borde y mover la vida a suelo firme, con orden.
+      </p>
+      <p className="mt-3 text-[11px] leading-snug text-white/45">Es el mismo cálculo del capítulo 03 con el escenario que elegiste ahí.</p>
+    </>,
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        La meseta (polígono de la tesis) se implanta a +{PROGRAMA.cotaM} m s.n.m., fuera del alcance de la erosión y del ascenso del mar previsto. Su borde pulsa: es el límite del suelo firme.
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-white/14 pt-3">
+        <div><p className="num text-3xl font-semibold leading-none">{fmt(m.areaHa, 1)}<span className="ml-1 text-sm font-normal text-white/55">ha</span></p><p className="mt-1.5 text-xs text-white/65">área del polígono</p></div>
+        <div><p className="num text-3xl font-semibold leading-none">{fmt(m.min, 0)}–{fmt(m.max, 0)}<span className="ml-1 text-sm font-normal text-white/55">m</span></p><p className="mt-1.5 text-xs text-white/65">altura en el relieve usado</p></div>
+      </div>
+      <p className="mt-3 text-[11px] leading-snug text-white/45">Verificación cruzada: el relieve de esta presentación (30 m de resolución, varios metros de error) da una altura media de {fmt(m.media, 0)} m dentro de la meseta; la cota +{PROGRAMA.cotaM} m viene de la tesis y no de este modelo.</p>
+    </>,
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        Las viviendas expuestas más cercanas a la meseta (en rojo) «viajan» a su nuevo lugar. El piloto reubica {PROGRAMA.viviendas}; la franja que se pierde a 30 años contiene {fmt(casasFranja)} de las {fmt(stats.casas.total)} construcciones del archivo.
+      </p>
+      <p className="mt-3 text-[11px] leading-snug text-white/45">El resto de la población necesitaría más suelo seguro: el piloto es un primer paso, no la solución completa. Las casas que viajan se eligen por cercanía; no es un listado de familias.</p>
+    </>,
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        Cada vivienda nace como un núcleo con estructura preparada, crece con una ampliación básica y se completa con condiciones de habitabilidad: cubierta, confort y continuidad espacial.
+      </p>
+      <ol className="mt-4 space-y-1.5 border-t border-white/14 pt-3 text-[13px]">
+        {['Núcleo inicial', 'Ampliación básica por adición', 'Condiciones de habitabilidad'].map((t, i) => (
+          <li key={t} className="flex gap-3"><span className="etiqueta text-arcilla">{`0${i + 1}`}</span>{t}</li>
+        ))}
+      </ol>
+      <p className="mt-3 text-[11px] leading-snug text-white/45">Etapas de la red rizomática de la tesis. Las casas se dibujan como volúmenes esquemáticos, no como proyecto.</p>
+    </>,
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        La cubierta en V del colegio es un macro-embudo de {fmt(PROGRAMA.cubiertaM2)} m² que conduce la lluvia a un aljibe de {fmt(PROGRAMA.aljibeL)} L. Un dispensario con {PROGRAMA.tomas} tomas reparte el agua y un ágora cubierta de {PROGRAMA.agoraM2} m² reúne a {PROGRAMA.estudiantes} estudiantes y hasta {fmt(PROGRAMA.usuariosFinDeSemana)} usuarios en fin de semana.
+      </p>
+      <p className="mt-3 text-[11px] leading-snug text-white/45">La lluvia y el nivel del aljibe son una animación explicativa, no una simulación hidrológica.</p>
+    </>,
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        La vía arterial baja del asentamiento actual a la meseta y al colegio; la anular rodea la meseta; la colectora sigue hacia Caño del Oro. En verde, los corredores ecológicos: uno al parque y otro de conexión productiva (ecoturismo y pesca).
+      </p>
+    </>,
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        La franja que el mar alcanzará no se vuelve a ocupar: se restaura como parque ecológico (≈{fmt(parqueHa, 1)} ha, verde) con vegetación costera, vetiver y manglar, y un humedal de bio-retención (≈{fmt(humedalHa, 1)} ha, azul) que trata las aguas grises y frena la escorrentía.
+      </p>
+      <ul className="mt-3 space-y-1.5 border-t border-white/14 pt-3 text-[13px] leading-snug text-white/80">
+        <li><strong className="font-semibold">Raíces</strong> que fijan el suelo del borde.</li>
+        <li><strong className="font-semibold">Manglar y vegetación</strong> que amortiguan el oleaje.</li>
+        <li><strong className="font-semibold">Humedal</strong> que infiltra el agua antes de que socave el talud.</li>
+      </ul>
+      <p className="mt-3 text-[11px] leading-snug text-white/45">Propuesta de esta presentación: ubicación, tamaño y mecanismos son conceptuales. Su efecto sobre la erosión no se midió y el modelo del capítulo 03 no lo incluye. Sin árboles dibujados: solo zonas.</p>
+    </>,
+    <>
+      <p className="mt-3 text-[13px] leading-relaxed text-white/80">
+        Retirarse a suelo firme, vivir con agua propia, moverse por una red clara y devolverle el borde al mar convertido en parque: un plan que se adapta en lugar de resistir.
+      </p>
+      <p className="mt-3 text-[11px] leading-snug text-white/45">Siguiente: el esquema en planta y los criterios de diseño.</p>
+    </>,
+  ];
+  return (
+    <aside key={version} className={contenedorPanel} aria-live="polite">
+      <p className="etiqueta text-arcilla">06 · Plan maestro · {String(idx + 1).padStart(2, '0')} / {String(PLAN_PASOS.length).padStart(2, '0')}</p>
+      <h3 className="mt-2 text-2xl font-semibold leading-tight tracking-tight sm:text-[1.7rem]">{paso.titulo}</h3>
+      {cuerpos[idx]}
+    </aside>
+  );
+}
+
+function IndicePlan({ activo }) {
+  return (
+    <nav aria-label="Pasos del plan maestro" className="fixed right-5 top-1/2 z-20 hidden -translate-y-1/2 lg:block">
+      <ol className="flex flex-col items-end gap-1">
+        {PLAN_PASOS.map((p, i) => (
+          <li key={p.id} title={p.corto} className="flex h-6 items-center">
+            <span className={`block h-[2px] rounded-full transition-all duration-300 ${i === activo ? 'w-9 bg-arcilla' : 'w-4 bg-white/40'}`} />
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
 /* ---------- cierre ---------- */
 function Cierre({ api, version }) {
   const d = api?.datos;
@@ -435,7 +531,7 @@ function Cierre({ api, version }) {
   return (
     <section id="cierre" className="relative bg-papel text-tinta">
       <div className="mx-auto max-w-6xl px-5 py-24 sm:px-10 sm:py-32">
-        <p className="etiqueta text-arcilla">06 · Lo que sigue</p>
+        <p className="etiqueta text-arcilla">07 · Lo que sigue</p>
         <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">Lo que muestran los números, y lo que falta.</h2>
 
         <div className="mt-14 grid gap-12 lg:grid-cols-2">
@@ -558,6 +654,7 @@ function CapaExplorar({ api }) {
 export default function Relato({ api, sinEscena }) {
   const [cap, setCap] = useState('portada');
   const [pasoIdx, setPasoIdx] = useState(0);
+  const [planIdx, setPlanIdx] = useState(0);
   const [anio, setAnio] = useState(0);
   const [modo, setModo] = useState('perdida');
   const [ctrl, setCtrl] = useState({ radio: 'n', redRiesgo: 'peatonal', anioRiesgo: 30, modelo: 'leva', nivel: 2 });
@@ -575,7 +672,7 @@ export default function Relato({ api, sinEscena }) {
     if (!a) return;
     const { cap: c, pasoIdx: pi, p } = S.current;
     const k = ctrlRef.current;
-    const base = { modelo: k.modelo, nivelManual: k.nivel, cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0 };
+    const base = { modelo: k.modelo, nivelManual: k.nivel, cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, plan: null };
     let est = base;
     if (c === 'portada') est = base;
     else if (c === 'problema') est = { ...base, cam: 'problema', dim: 0.1 };
@@ -590,7 +687,13 @@ export default function Relato({ api, sinEscena }) {
         calles: ps.calles ?? 1, casas: 0, dim: 0.55, rutas: ps.rutas || 0, contexto: ps.contexto || 0,
       };
       if (ps.id === 'riesgo') est = { ...est, year: k.anioRiesgo, modo: 'perdida', dim: 0.3, red: k.redRiesgo };
-    } else est = { ...base, cam: 'isla', dim: 0.5 }; // social y cierre
+    } else if (c === 'plan') {
+      const np = PLAN_PASOS.length;
+      const ip = Math.min(np - 1, Math.floor(p * np));
+      const lf = clamp01(p * np - ip);
+      est = { ...base, cam: PLAN_PASOS[ip].cam, year: 30, modo: 'perdida', casas: 1, dim: 0.3, plan: planEstado(ip, lf) };
+    } else if (c === 'esquema') est = { ...base, cam: 'plan_general', year: 30, dim: 0.3, plan: planEstado(PLAN_PASOS.length - 1, 1) };
+    else est = { ...base, cam: 'isla', dim: 0.5 }; // social y cierre
     a.set(est);
   }, []);
 
@@ -611,6 +714,10 @@ export default function Relato({ api, sinEscena }) {
       const p = clamp01(-r.top / total);
       let pi = S.current.pasoIdx;
       if (actual === 'sintaxis') pi = Math.min(PASOS.length - 1, Math.floor(p * PASOS.length));
+      if (actual === 'plan') {
+        const ip = Math.min(PLAN_PASOS.length - 1, Math.floor(p * PLAN_PASOS.length));
+        setPlanIdx((x) => (x === ip ? x : ip));
+      }
       S.current = { cap: actual, pasoIdx: pi, p };
       const tot = document.documentElement.scrollHeight - vh;
       document.documentElement.style.setProperty('--p', tot > 0 ? String(clamp01(window.scrollY / tot)) : '0');
@@ -631,7 +738,7 @@ export default function Relato({ api, sinEscena }) {
   }, [aplicar, api]);
 
   useEffect(() => { aplicar(); }, [ctrl, api, aplicar]);
-  useEffect(() => { if (!['erosion', 'vias', 'sintaxis'].includes(cap)) setExplorar(false); }, [cap]);
+  useEffect(() => { if (!['erosion', 'vias', 'sintaxis', 'plan'].includes(cap)) setExplorar(false); }, [cap]);
   useEffect(() => { api?.alCambiarModelo(() => setVersion((v) => v + 1)); }, [api]);
 
   const irAPaso = (i) => {
@@ -698,9 +805,19 @@ export default function Relato({ api, sinEscena }) {
       {/* 04 · sintaxis */}
       <section id="sintaxis" style={{ height: `${PASOS.length * ALTO_PASO}svh` }} aria-label="Sintaxis espacial" />
 
+      {/* 06 · plan maestro 3D (la escena la mueve el scroll) */}
+      <section id="plan" style={{ height: `${PLAN_PASOS.length * ALTO_PASO}svh` }} aria-label="Plan maestro en 3D" />
+      <SeccionEsquema />
+
       {/* zoom y exploración del mapa 3D */}
-      {api && ['erosion', 'vias', 'sintaxis'].includes(cap) && <ControlesVista api={api} explorar={explorar} setExplorar={setExplorar} panelOculto={panelOculto} setPanelOculto={setPanelOculto} />}
-      {api && explorar && ['erosion', 'vias', 'sintaxis'].includes(cap) && <CapaExplorar api={api} />}
+      {api && ['erosion', 'vias', 'sintaxis', 'plan'].includes(cap) && <ControlesVista api={api} explorar={explorar} setExplorar={setExplorar} panelOculto={panelOculto} setPanelOculto={setPanelOculto} />}
+      {api && explorar && ['erosion', 'vias', 'sintaxis', 'plan'].includes(cap) && <CapaExplorar api={api} />}
+      {api && cap === 'plan' && (
+        <>
+          {!panelOculto && <PanelPlan paso={PLAN_PASOS[planIdx]} idx={planIdx} stats={stats} version={version} />}
+          <IndicePlan activo={planIdx} />
+        </>
+      )}
 
       {/* paneles flotantes */}
       {api && !panelOculto && cap === 'erosion' && <PanelErosion key={version} stats={stats} anio={anio} modo={modo} ctrl={ctrl} setCtrl={setCtrl} />}

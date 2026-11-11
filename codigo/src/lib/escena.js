@@ -5,6 +5,7 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { BASE, prepararEspecies, instanciarArboles } from './arboles.js';
 import { rampa, percentil } from './paleta.js';
+import { MESETA, ESCUELA, VIVIENDAS, PARQUE, HUMEDAL, VIAS, CORREDORES, PROGRAMA, PARQUE_RADIOS, HUMEDAL_RADIOS } from './plan.js';
 
 // =============================================================================
 // Escena 3D única de la presentación (Tierra Bomba).
@@ -135,11 +136,15 @@ function parchearTerreno(mat, U) {
     sh.uniforms.uYear = U.uYear;
     sh.uniforms.uMode = U.uMode;
     sh.uniforms.uDim = U.uDim;
+    sh.uniforms.uPlan = U.uPlan;
+    sh.uniforms.uPlanAmt = U.uPlanAmt;
+    sh.uniforms.uFranja = U.uFranja;
+    sh.uniforms.uTime = U.uTime;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec2 aWin;\nvarying vec2 vWin;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uLost;\nuniform float uYear;\nuniform float uMode;\nuniform float uDim;\nvarying vec2 vWin;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uLost;\nuniform float uYear;\nuniform float uMode;\nuniform float uDim;\nuniform sampler2D uPlan;\nuniform vec3 uPlanAmt;\nuniform float uFranja;\nuniform float uTime;\nvarying vec2 vWin;')
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
@@ -154,7 +159,20 @@ function parchearTerreno(mat, U) {
           diffuseColor.rgb = mix(diffuseColor.rgb, band, 0.84);
         }
         float front = smoothstep(0.8, 0.0, abs(lostAt - uYear)) * step(0.001, uYear) * (1.0 - uMode);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.66, 0.34), front * 0.9);`
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.66, 0.34), front * 0.9);
+        // plan maestro: la franja que se pierde pasa de rojo a parque; meseta segura, parque central y humedal
+        if (uFranja > 0.001 && uYear > 0.001 && lostAt <= 30.0) {
+          float raya = step(0.5, fract((vWin.x * 1.0 + vWin.y * 1.7) * 1100.0));
+          vec3 verde = mix(vec3(0.13, 0.50, 0.28), vec3(0.22, 0.66, 0.38), raya);
+          diffuseColor.rgb = mix(diffuseColor.rgb, verde, 0.88 * uFranja);
+        }
+        vec3 pz = texture2D(uPlan, vWin).rgb;
+        float pulso = 0.5 + 0.5 * sin(uTime * 2.2);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.62, 0.56), 0.42 * pz.r * uPlanAmt.x);
+        diffuseColor.rgb += vec3(0.15, 0.95, 0.80) * (1.0 - smoothstep(0.0, 0.16, abs(pz.r - 0.5))) * uPlanAmt.x * (0.35 + 0.35 * pulso);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.58, 0.30), 0.62 * pz.g * uPlanAmt.y);
+        diffuseColor.rgb += vec3(0.30, 0.95, 0.45) * (1.0 - smoothstep(0.0, 0.16, abs(pz.g - 0.5))) * uPlanAmt.y * 0.4;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.20, 0.62, 0.78), 0.66 * pz.b * uPlanAmt.z);`
       );
   };
   mat.customProgramCacheKey = () => 'erosion-v1';
@@ -510,7 +528,31 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     t.anisotropy = aniso;
     return t;
   };
+  // zonas del plan maestro dibujadas sobre el terreno (R = meseta, G = parque, B = humedal), en la ventana de la isla
+  const PW = Math.round(W / 2);
+  const PH = Math.round(H / 2);
+  const planCanvas = document.createElement('canvas');
+  planCanvas.width = PW;
+  planCanvas.height = PH;
+  {
+    const pc = planCanvas.getContext('2d');
+    pc.fillStyle = '#000';
+    pc.fillRect(0, 0, PW, PH);
+    pc.globalCompositeOperation = 'lighter';
+    pc.filter = 'blur(1px)';
+    const aPx = (X, Z) => [((X / mpt + txc - tx0) / (tx1 - tx0)) * PW, ((Z / mpt + tyc - ty0) / (ty1 - ty0)) * PH];
+    const relleno = (color, pts) => { pc.fillStyle = color; pc.beginPath(); pts.forEach(([X, Z], i) => { const [x, y] = aPx(X, Z); if (i) pc.lineTo(x, y); else pc.moveTo(x, y); }); pc.closePath(); pc.fill(); };
+    relleno('rgb(255,0,0)', MESETA.map(([lo, la]) => llToXZ(lo, la)));
+    const enXZ = (centro, rx, rz) => { const [cX, cZ] = llToXZ(...centro); return Array.from({ length: 48 }, (_, i) => { const a = (i / 48) * Math.PI * 2; return [cX + rx * Math.cos(a), cZ + rz * Math.sin(a)]; }); };
+    relleno('rgb(0,255,0)', enXZ(PARQUE, PARQUE_RADIOS[0], PARQUE_RADIOS[1]));
+    relleno('rgb(0,0,255)', enXZ(HUMEDAL, HUMEDAL_RADIOS[0], HUMEDAL_RADIOS[1]));
+  }
+  const planTex = new THREE.CanvasTexture(planCanvas);
+  planTex.flipY = false;
+  planTex.minFilter = planTex.magFilter = THREE.LinearFilter;
+  planTex.generateMipmaps = false;
   const U = {
+    uPlan: { value: planTex }, uPlanAmt: { value: new THREE.Vector3(0, 0, 0) }, uFranja: { value: 0 }, uTime: { value: 0 },
     uLost: { value: lostTex }, uYear: { value: 0 }, uMode: { value: 0 }, uDim: { value: 0 },
   };
   const terrainMat = new THREE.MeshStandardMaterial({ map: textureFrom(satImg, maxTex), roughness: 1, metalness: 0 });
@@ -631,10 +673,11 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   const pv = new THREE.Vector3();
   const roof = new THREE.Color();
   const RED = new THREE.Color(0xff2a2a);
+  const relocP = new Float32Array(PROGRAMA.viviendas); // avance del vuelo de cada vivienda reubicada (0..1)
   const updateHouses = (yr, modo, escala) => {
     houses.forEach((hh, k) => {
       const lost = yr > 0.001 && hh.lostAt <= yr;
-      const hide = lost && modo === 'despues';
+      const hide = (lost && modo === 'despues') || (hh.slot !== undefined && relocP[hh.slot] > 0.02);
       qn.setFromAxisAngle(upV, -hh.ang);
       pv.set(hh.x, hh.y, hh.z);
       const s = hide ? 0.0001 : escala;
@@ -850,6 +893,296 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   }
   scene.add(etiquetas);
 
+  // ===========================================================================
+  // ---------- plan maestro 3D (geometría de la tesis; parque y humedal: propuesta) ----------
+  // ===========================================================================
+  const planGroup = new THREE.Group();
+  planGroup.visible = false;
+  scene.add(planGroup);
+  const PLAN_KEYS = ['meseta', 'vuelo', 'viviendas', 'escuela', 'lluvia', 'vias', 'corredores', 'parque', 'humedal', 'franja', 'etiq'];
+  const planT = Object.fromEntries(PLAN_KEYS.map((k) => [k, 0]));
+  const planC = Object.fromEntries(PLAN_KEYS.map((k) => [k, 0]));
+  const dentro = (x, z, poly) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, zi] = poly[i]; const [xj, zj] = poly[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  const mesetaXZ = MESETA.map(([lo, la]) => llToXZ(lo, la));
+  const mCx = mesetaXZ.reduce((s, p) => s + p[0], 0) / mesetaXZ.length;
+  const mCz = mesetaXZ.reduce((s, p) => s + p[1], 0) / mesetaXZ.length;
+  const [sX, sZ] = llToXZ(...ESCUELA);
+  const [vvX, vvZ] = llToXZ(...VIVIENDAS);
+  const [pkX, pkZ] = llToXZ(...PARQUE);
+  const sY = heightAtXZ(sX, sZ);
+
+  // cifras de la meseta sobre el relieve usado (verificación de la cota +22 m)
+  const mesetaInfo = (() => {
+    let area = 0;
+    for (let i = 0, j = mesetaXZ.length - 1; i < mesetaXZ.length; j = i++) area += (mesetaXZ[j][0] + mesetaXZ[i][0]) * (mesetaXZ[j][1] - mesetaXZ[i][1]);
+    area = Math.abs(area) / 2;
+    let mn = 1e9; let mx = -1e9; let sum = 0; let n = 0;
+    const xs = mesetaXZ.map((p) => p[0]); const zs = mesetaXZ.map((p) => p[1]);
+    for (let x = Math.min(...xs); x <= Math.max(...xs); x += 12) {
+      for (let z = Math.min(...zs); z <= Math.max(...zs); z += 12) {
+        if (!dentro(x, z, mesetaXZ)) continue;
+        const e = Math.max(0, demAtTile(x / mpt + txc, z / mpt + tyc));
+        mn = Math.min(mn, e); mx = Math.max(mx, e); sum += e; n++;
+      }
+    }
+    return { areaHa: area / 10000, min: mn, max: mx, media: n ? sum / n : 0 };
+  })();
+
+  // manzana de 120 viviendas: el paso se reduce hasta que todas quepan dentro de la meseta
+  const slotsViv = (() => {
+    const candidatos = [[vvX, vvZ], [mCx, mCz]];
+    let mejor = [];
+    for (const [cx0v, cz0v] of candidatos) {
+      for (let paso = 26; paso >= 12; paso -= 2) {
+        let arr = [];
+        for (let r = -12; r <= 12; r++) {
+          for (let c = -14; c <= 14; c++) {
+            const x = cx0v + c * paso * 0.85;
+            const z = cz0v + r * paso;
+            if (dentro(x, z, mesetaXZ) && Math.hypot(x - sX, z - sZ) > 60) arr.push([x, z, r]);
+          }
+        }
+        if (arr.length > mejor.length) mejor = arr;
+        if (arr.length >= PROGRAMA.viviendas) {
+          arr = arr.sort((a, b) => Math.hypot(a[0] - cx0v, a[1] - cz0v) - Math.hypot(b[0] - cx0v, b[1] - cz0v)).slice(0, PROGRAMA.viviendas);
+          const rs = arr.map((a) => a[2]); const r0 = Math.min(...rs); const r1 = Math.max(...rs);
+          return arr.map(([x, z, r]) => [x, z, (9 * (r - r0)) / Math.max(1, r1 - r0)]);
+        }
+      }
+    }
+    return mejor;
+  })();
+  const NV = slotsViv.length;
+  const wallGeo = new THREE.BoxGeometry(1, 1, 1); wallGeo.translate(0, 0.5, 0);
+  const roofGeo = new THREE.ConeGeometry(0.7071, 1, 4); roofGeo.rotateY(Math.PI / 4); roofGeo.translate(0, 0.5, 0);
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xe6d2b0, roughness: 0.9 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0xc86d51, roughness: 0.8 });
+  const nuevasParedes = new THREE.InstancedMesh(wallGeo, wallMat, Math.max(1, NV));
+  const nuevosTechos = new THREE.InstancedMesh(roofGeo, roofMat, Math.max(1, NV));
+  nuevasParedes.frustumCulled = nuevosTechos.frustumCulled = false;
+  const volarMesh = new THREE.InstancedMesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0xff3b30, roughness: 0.6, emissive: 0x551008 }), Math.max(1, NV));
+  volarMesh.frustumCulled = false;
+  planGroup.add(nuevasParedes, nuevosTechos, volarMesh);
+
+  // viviendas en riesgo (franja a 30 años) más cercanas a la meseta: son las que «viajan»
+  const asignarReubicacion = () => {
+    houses.forEach((hh) => { hh.slot = undefined; });
+    slotCasa.length = 0;
+    const cand = houses.map((hh, i) => ({ i, d: Math.hypot(hh.x - vvX, hh.z - vvZ) })).filter((o) => houses[o.i].lostAt <= 30).sort((a, b) => a.d - b.d).slice(0, NV);
+    cand.forEach((o, k) => { houses[o.i].slot = k; slotCasa[k] = houses[o.i]; });
+    relocP.fill(0);
+    return cand.length;
+  };
+  const slotCasa = [];
+  let nVuelan = asignarReubicacion();
+  const smoothstep01 = (x) => { const t = clamp01(x); return t * t * (3 - 2 * t); };
+  const tmpM = new THREE.Matrix4(); const tmpQ = new THREE.Quaternion(); const tmpS = new THREE.Vector3(); const tmpP = new THREE.Vector3(); const Y = new THREE.Vector3(0, 1, 0);
+  let planHouseKey = '';
+  const actualizarViviendasPlan = (escala) => {
+    const key = `${planC.vuelo.toFixed(3)}|${planC.viviendas.toFixed(3)}|${escala.toFixed(2)}|${nVuelan}`;
+    if (key === planHouseKey) return;
+    planHouseKey = key;
+    let cambioReloc = false;
+    for (let k = 0; k < NV; k++) {
+      const [x, z, fila] = slotsViv[k];
+      const y = heightAtXZ(x, z);
+      const origen = slotCasa[k];
+      const p = origen ? clamp01(planC.vuelo * 1.45 - 0.45 * (k / NV)) : 0;
+      if (Math.abs(relocP[k] - p) > 1e-4) { relocP[k] = p; cambioReloc = true; }
+      // vivienda que vuela (copia roja de la original)
+      if (origen && p > 0.02 && p < 0.98) {
+        const e = smoothstep01(p);
+        tmpP.set(origen.x + (x - origen.x) * e, origen.y + (y - origen.y) * e + Math.sin(Math.PI * p) * 70, origen.z + (z - origen.z) * e);
+        const w = (origen.w + (6.8 - origen.w) * e) * escala; const hgt = (origen.h * (1 - e) + 3 * e) * escala; const d = (origen.d + (9.2 - origen.d) * e) * escala;
+        tmpQ.setFromAxisAngle(Y, -origen.ang * (1 - e));
+        tmpS.set(w, hgt, d);
+      } else { tmpP.set(x, y, z); tmpQ.identity(); tmpS.set(0.0001, 0.0001, 0.0001); }
+      tmpM.compose(tmpP, tmpQ, tmpS); volarMesh.setMatrixAt(k, tmpM);
+      // vivienda nueva: núcleo → ampliación → condiciones de habitabilidad (red rizomática de la tesis)
+      const aterrizaje = origen ? smoothstep01((p - 0.7) / 0.3) : 0;
+      const crecer = clamp01(planC.viviendas * 1.3 - 0.3 * (fila / 9));
+      const v = Math.max(crecer * 3, aterrizaje);
+      const s1 = clamp01(v); const s2 = clamp01(v - 1); const s3 = clamp01(v - 2);
+      const w = (4.6 + 2.2 * smoothstep01(s2)) * s1; const d = (6 + 3.2 * smoothstep01(s2)) * s1; const hgt = 3 * smoothstep01(s1);
+      tmpP.set(x, y, z); tmpQ.identity(); tmpS.set(Math.max(1e-4, w), Math.max(1e-4, hgt), Math.max(1e-4, d));
+      tmpM.compose(tmpP, tmpQ, tmpS); nuevasParedes.setMatrixAt(k, tmpM);
+      tmpP.set(x, y + hgt, z); tmpS.set(Math.max(1e-4, (w + 1.2) * smoothstep01(s3)), Math.max(1e-4, 2.2 * smoothstep01(s3)), Math.max(1e-4, (d + 1.2) * smoothstep01(s3)));
+      tmpM.compose(tmpP, tmpQ, tmpS); nuevosTechos.setMatrixAt(k, tmpM);
+    }
+    nuevasParedes.instanceMatrix.needsUpdate = nuevosTechos.instanceMatrix.needsUpdate = volarMesh.instanceMatrix.needsUpdate = true;
+    if (cambioReloc) houseKey = '';
+  };
+
+  // complejo educativo: cubierta captadora en V («macro-embudo»), canaleta, aljibe, ágora y dispensario
+  const escuelaG = new THREE.Group();
+  escuelaG.position.set(sX, sY, sZ);
+  planGroup.add(escuelaG);
+  {
+    const muro = new THREE.Mesh(new THREE.BoxGeometry(70, 6.4, 24), new THREE.MeshStandardMaterial({ color: 0xefe8dc, roughness: 0.9 }));
+    muro.position.y = 3.2;
+    escuelaG.add(muro);
+    const pos4 = new Float32Array([
+      -35, 9, -13, 35, 9, -13, 35, 6.2, 0, -35, 6.2, 0,
+      -35, 6.2, 0, 35, 6.2, 0, 35, 9, 13, -35, 9, 13,
+    ]);
+    const rg = new THREE.BufferGeometry();
+    rg.setAttribute('position', new THREE.BufferAttribute(pos4, 3));
+    rg.setIndex([0, 3, 1, 1, 3, 2, 4, 7, 5, 5, 7, 6]);
+    rg.computeVertexNormals();
+    const techo = new THREE.Mesh(rg, new THREE.MeshStandardMaterial({ color: 0xa9dcea, roughness: 0.35, metalness: 0.25, side: THREE.DoubleSide, emissive: 0x0c5a78, emissiveIntensity: 0.1 }));
+    techo.userData.techo = true;
+    escuelaG.add(techo);
+    escuelaG.userData.techoMat = techo.material;
+    const canaleta = new THREE.Mesh(new THREE.BoxGeometry(70, 0.6, 0.9), new THREE.MeshStandardMaterial({ color: 0x2aa7d8, emissive: 0x1a7aa0, emissiveIntensity: 0.5 }));
+    canaleta.position.set(0, 6.15, 0);
+    escuelaG.add(canaleta);
+    // aljibe de 450.000 L (representación esquemática, en corte: vidrio + nivel de agua)
+    const tanque = new THREE.Mesh(new THREE.BoxGeometry(26, 5, 18), new THREE.MeshStandardMaterial({ color: 0x9fd8e6, transparent: true, opacity: 0.22, roughness: 0.1, depthWrite: false }));
+    tanque.position.set(0, 2.5, 33);
+    escuelaG.add(tanque);
+    const agua = new THREE.Mesh(new THREE.BoxGeometry(24.6, 1, 16.6), new THREE.MeshStandardMaterial({ color: 0x2f9fd0, transparent: true, opacity: 0.9, roughness: 0.2 }));
+    agua.geometry.translate(0, 0.5, 0);
+    agua.position.set(0, 0.2, 33);
+    escuelaG.add(agua);
+    escuelaG.userData.agua = agua;
+    // ágora cubierta de ~400 m² (disco de 11,3 m de radio) y dispensario con 12 tomas
+    const agora = new THREE.Mesh(new THREE.CylinderGeometry(11.3, 11.3, 0.5, 40), new THREE.MeshStandardMaterial({ color: 0xd9c7a3 }));
+    agora.position.set(52, 0.25, -14);
+    const agoraTecho = new THREE.Mesh(new THREE.ConeGeometry(13.5, 4.5, 40), new THREE.MeshStandardMaterial({ color: 0xc86d51, roughness: 0.8 }));
+    agoraTecho.position.set(52, 7.2, -14);
+    const postes = new THREE.Group();
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; const po = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 5, 6), new THREE.MeshStandardMaterial({ color: 0x8a6a4a })); po.position.set(52 + Math.cos(a) * 10, 2.9, -14 + Math.sin(a) * 10); postes.add(po); }
+    escuelaG.add(agora, agoraTecho, postes);
+    const disp = new THREE.Mesh(new THREE.BoxGeometry(12, 4, 8), new THREE.MeshStandardMaterial({ color: 0xefe8dc }));
+    disp.position.set(-46, 2, 34);
+    escuelaG.add(disp);
+    for (let i = 0; i < PROGRAMA.tomas; i++) {
+      const toma = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.3, 8), new THREE.MeshStandardMaterial({ color: 0x2aa7d8, emissive: 0x1a7aa0, emissiveIntensity: 0.6 }));
+      toma.position.set(-51 + i * 0.9, 0.65, 29);
+      escuelaG.add(toma);
+    }
+  }
+  // lluvia: 700 trazos que caen sobre la cubierta
+  const NL = 700;
+  const lluviaPos = new Float32Array(NL * 6);
+  const lluviaVel = new Float32Array(NL);
+  const reponer = (i, alto = Math.random() * 130) => {
+    const x = sX + (Math.random() - 0.5) * 120; const z = sZ + (Math.random() - 0.5) * 80; const y = sY + 8 + alto;
+    lluviaPos.set([x, y, z, x - 0.4, y + 4.5, z], i * 6);
+    lluviaVel[i] = 55 + Math.random() * 25;
+  };
+  for (let i = 0; i < NL; i++) reponer(i);
+  const lluviaGeo = new THREE.BufferGeometry();
+  lluviaGeo.setAttribute('position', new THREE.BufferAttribute(lluviaPos, 3));
+  const lluviaMat = new THREE.LineBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0, depthWrite: false });
+  const lluviaLineas = new THREE.LineSegments(lluviaGeo, lluviaMat);
+  lluviaLineas.frustumCulled = false;
+  lluviaLineas.renderOrder = 9;
+  planGroup.add(lluviaLineas);
+
+  // vías del plan (sendas arena) y corredores ecológicos (verde, con flujo)
+  const planLineMats = [];
+  const planLineas = [];
+  const trazoPlan = (pts, color, ancho, opts = {}) => {
+    const pos = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, z0] = pts[i]; const [x1, z1] = pts[i + 1];
+      const L = Math.hypot(x1 - x0, z1 - z0); const k = Math.max(1, Math.ceil(L / 10));
+      for (let j = 0; j < k; j++) {
+        const ax = x0 + ((x1 - x0) * j) / k; const az = z0 + ((z1 - z0) * j) / k;
+        const bx = x0 + ((x1 - x0) * (j + 1)) / k; const bz = z0 + ((z1 - z0) * (j + 1)) / k;
+        pos.push(ax, heightAtXZ(ax, az) + 2.6, az, bx, heightAtXZ(bx, bz) + 2.6, bz);
+      }
+    }
+    const g = new LineSegmentsGeometry();
+    g.setPositions(pos);
+    const halo = new LineSegments2(g, new LineMaterial({ color: 0x05080c, linewidth: ancho + 3, transparent: true, opacity: 0, depthWrite: false }));
+    const main = new LineSegments2(g, new LineMaterial({ color, linewidth: ancho, transparent: true, opacity: 0, depthWrite: false, ...opts }));
+    if (opts.dashed) main.computeLineDistances();
+    halo.renderOrder = 12; main.renderOrder = 13;
+    halo.frustumCulled = main.frustumCulled = false;
+    planGroup.add(halo, main);
+    planLineMats.push(halo.material, main.material);
+    lineMats.push(halo.material, main.material);
+    planLineas.push({ g, halo, main, N: pos.length / 6, dash: !!opts.dashed });
+    return planLineas[planLineas.length - 1];
+  };
+  const trazosVias = VIAS.map((v) => trazoPlan(v.pts.map(([lo, la]) => llToXZ(lo, la)), 0xf5b45a, 5));
+  const trazosCorr = CORREDORES.map((c) => trazoPlan([llToXZ(...c.desde), llToXZ(...c.hasta)], 0x35d08a, 4, { dashed: true, dashSize: 14, gapSize: 9 }));
+
+  // etiquetas del plan
+  const planEtiquetas = new THREE.Group();
+  planGroup.add(planEtiquetas);
+  const costaOeste = (() => { for (let dxm = 0; dxm < 1400; dxm += 20) { const X = pkX - dxm; if (distAt(X, pkZ) <= 0.5) return [X + 20, pkZ]; } return [pkX - 400, pkZ]; })();
+  const etqPlan = (texto, X, Z, alto, clave) => { const sp = etiqueta(texto, X, Z, alto); sp.userData.clave = clave; sp.material.opacity = 0; planEtiquetas.add(sp); return sp; };
+  etqPlan('Meseta segura +22 m', mCx + 150, mCz - 40, 90, 'meseta');
+  etqPlan('120 viviendas', mCx - 120, mCz - 40, 60, 'viviendas');
+  etqPlan('Complejo educativo', sX + 20, sZ, 55, 'escuela');
+  etqPlan('Parque ecológico', pkX + 30, pkZ + 20, 55, 'parque');
+  etqPlan('Barrera costera', costaOeste[0], costaOeste[1], 45, 'franja');
+  etqPlan('Humedal', ...llToXZ(...HUMEDAL), 40, 'humedal');
+
+  const actualizarPlan = (dt, t, escalaCasas) => {
+    for (const k of PLAN_KEYS) planC[k] += (planT[k] - planC[k]) * expo(dt, k === 'vuelo' || k === 'viviendas' ? 9 : 2.4);
+    U.uPlanAmt.value.set(planC.meseta, planC.parque, planC.humedal);
+    U.uFranja.value = planC.franja;
+    U.uTime.value = t;
+    const activo = PLAN_KEYS.some((k) => planC[k] > 0.01);
+    planGroup.visible = activo;
+    if (!activo) return;
+    nuevasParedes.visible = nuevosTechos.visible = planC.vuelo > 0.01 || planC.viviendas > 0.01;
+    volarMesh.visible = planC.vuelo > 0.01;
+    actualizarViviendasPlan(escalaCasas);
+    // vías y corredores
+    trazosVias.forEach((tr) => {
+      tr.main.visible = tr.halo.visible = planC.vias > 0.01;
+      tr.g.instanceCount = Math.max(1, Math.floor(tr.N * clamp01(planC.vias)));
+      tr.main.material.opacity = clamp01(planC.vias * 1.4); tr.halo.material.opacity = clamp01(planC.vias * 0.8);
+    });
+    trazosCorr.forEach((tr) => {
+      tr.main.visible = tr.halo.visible = planC.corredores > 0.01;
+      tr.g.instanceCount = Math.max(1, Math.floor(tr.N * clamp01(planC.corredores)));
+      tr.main.material.opacity = clamp01(planC.corredores * 1.4); tr.halo.material.opacity = clamp01(planC.corredores * 0.7);
+      tr.main.material.dashOffset -= dt * 9;
+    });
+    // complejo educativo
+    escuelaG.visible = planC.escuela > 0.01;
+    const k = clamp01(planC.escuela);
+    escuelaG.scale.set(1, Math.max(0.001, smoothstep01(k)), 1);
+    // lluvia y llenado del aljibe
+    lluviaMat.opacity = clamp01(planC.lluvia) * 0.75;
+    lluviaLineas.visible = planC.lluvia > 0.01;
+    if (lluviaLineas.visible) {
+      for (let i = 0; i < NL; i++) {
+        const o = i * 6;
+        const dy = lluviaVel[i] * dt;
+        lluviaPos[o + 1] -= dy; lluviaPos[o + 4] -= dy;
+        if (lluviaPos[o + 1] < sY + 7.5) reponer(i, 110 + Math.random() * 30);
+      }
+      lluviaGeo.attributes.position.needsUpdate = true;
+    }
+    const agua = escuelaG.userData.agua;
+    agua.scale.y = Math.max(0.001, 4.4 * smoothstep01(planC.lluvia));
+    escuelaG.userData.techoMat.emissiveIntensity = 0.1 + 0.5 * clamp01(planC.lluvia) * (0.6 + 0.4 * Math.sin(t * 5));
+    // etiquetas
+    planEtiquetas.children.forEach((sp) => { sp.material.opacity = clamp01(planC.etiq) * clamp01(planC[sp.userData.clave === 'viviendas' ? 'viviendas' : sp.userData.clave] ?? 0); });
+    const hv = planC.vuelo > 0.01 ? 1 : 0;
+    planEtiquetas.children.forEach((sp) => { if (sp.userData.clave === 'viviendas') sp.material.opacity = clamp01(planC.etiq) * clamp01(Math.max(planC.viviendas, planC.vuelo) * 2) * (hv || planC.viviendas > 0.01 ? 1 : 0); });
+  };
+  const planInfo = {
+    mesetaInfo,
+    viviendasColocadas: NV,
+    nVuelan: () => nVuelan,
+    areaParqueHa: () => ha(cumLostPx[30]),
+  };
+
   // ---------- capas de color ----------
   const colorTmp = new THREE.Color();
   const gris = new THREE.Color().setRGB(0.30, 0.32, 0.34);
@@ -904,6 +1237,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     km: { peatonal: redes.peatonal.km, motos: redes.motos.km },
     porTipo: { peatonal: redes.peatonal.porTipo, motos: redes.motos.porTipo },
     modelo: 'leva',
+    plan: { meseta: mesetaInfo, viviendasColocadas: NV, parqueHa: 0, casasFranja: 0, reubicadas: 0 },
   };
   let curModelo = 'leva';
   let curNivel = 2;
@@ -914,12 +1248,20 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     stats.casas = { total: houses.length, 10: casasPerdidas(10), 20: casasPerdidas(20), 30: casasPerdidas(30) };
     stats.riesgoRed = calcularRiesgo();
     stats.modelo = curModelo;
+    stats.plan.parqueHa = ha(cumLostPx[30]);
+    stats.plan.casasFranja = casasPerdidas(30);
+    stats.plan.reubicadas = nVuelan;
   };
+  stats.plan.parqueHa = ha(cumLostPx[30]);
+  stats.plan.casasFranja = casasPerdidas(30);
+  stats.plan.reubicadas = nVuelan;
   const recalcularTodo = (modelo, nivelM) => {
     calcularPerdida(modelo, nivelM);
     houses.forEach((hh) => { hh.lostAt = lostAtXZ(hh.x, hh.z); });
     treeAll.forEach((tr) => { tr.lostAt = lostAtXZ(tr.x, tr.z); });
     Object.values(redes).forEach((r) => { r.piezas.forEach((p) => { p.lostAt = lostAtXZ(p.mx, p.mz); }); r.firma = ''; });
+    nVuelan = asignarReubicacion();
+    planHouseKey = '';
     refrescarStats();
   };
 
@@ -943,11 +1285,16 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
       : { pos: new THREE.Vector3(500, 7800, 8400), look: new THREE.Vector3(0, 0, 300) }),
     vias: () => ({ pos: new THREE.Vector3(250 + dx(), 5700, 6700), look: new THREE.Vector3(dx(), 0, 250) }),
     lancha: () => ({ pos: new THREE.Vector3(bc.x + bdist * 0.18 + dx() * 1.5, bdist * 0.62, bc.z + bdist * 0.92), look: new THREE.Vector3(bc.x + dx() * 1.5, 0, bc.z) }),
+    plan_general: () => ({ pos: new THREE.Vector3(mCx + 260, 1150, mCz + 1350), look: new THREE.Vector3(mCx - 20, 0, mCz + 60) }),
+    plan_meseta: () => ({ pos: new THREE.Vector3(mCx + 140, 560, mCz + 700), look: new THREE.Vector3(mCx, 20, mCz) }),
+    plan_escuela: () => ({ pos: new THREE.Vector3(sX + 70, sY + 120, sZ + 190), look: new THREE.Vector3(sX, sY + 4, sZ) }),
+    plan_vias: () => ({ pos: new THREE.Vector3(mCx + 500, 1900, mCz + 1700), look: new THREE.Vector3(mCx + 150, 0, mCz - 120) }),
+    plan_parque: () => ({ pos: new THREE.Vector3(pkX + 240, 700, pkZ + 820), look: new THREE.Vector3(pkX - 20, 0, pkZ - 40) }),
     casco_alto: () => ({ pos: new THREE.Vector3(vx + 250, 1500, vz + 1500), look: new THREE.Vector3(vx, 0, vz) }),
   };
 
   // ---------- estado objetivo y bucle ----------
-  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'leva', nivelManual: 2 };
+  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'leva', nivelManual: 2, plan: null };
   // vista libre del usuario (zoom, giro, desplazamiento) sobre la pose de cada paso
   const vt = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
   const vi = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
@@ -1117,6 +1464,8 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     ctxMat.opacity = cur.contexto;
     etiquetas.visible = cur.contexto > 0.05;
     etiquetas.children.forEach((s) => { s.material.opacity = cur.contexto; });
+    for (const k of PLAN_KEYS) planT[k] = (T.plan && T.plan[k]) || 0;
+    actualizarPlan(dt, t, cur.escala);
     renderer.render(scene, camera);
     if (!shown) {
       shown = true;
