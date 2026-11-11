@@ -138,7 +138,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   let disposed = false;
 
   // ---------- carga de datos ----------
-  const TOTAL = 13;
+  const TOTAL = 14;
   let hechas = 0;
   const track = (p) => p.then((r) => { hechas++; onProgreso(0.6 * (hechas / TOTAL), 'Descargando la isla'); return r; });
   const jsonOf = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u); return r.json(); });
@@ -152,7 +152,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     return JSON.parse(new TextDecoder().decode(u8));
   };
 
-  const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, ...demImgs] = await Promise.all([
+  const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, cartagenaMascaraImg, ...demImgs] = await Promise.all([
     track(loadImg(`${BASE}assets/texturas/sat_base.jpg`)),
     track(loadImg(`${BASE}datos/isla_mascara.png`)),
     track(loadImg(`${BASE}assets/texturas/tierrabomba_satelite.jpg`)),
@@ -161,6 +161,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     track(gunzipJSON(`${BASE}datos/construcciones_tierra_bomba.json.gz`)),
     track(jsonOf(`${BASE}datos/sintaxis.json`)),
     track(loadImg(`${BASE}datos/water_normals_fine.jpg`)),
+    track(loadImg(`${BASE}datos/cartagena_mascara.png`)),
     track(loadImg(`${BASE}datos/elevacion/1187_1929.png`)),
     track(loadImg(`${BASE}datos/elevacion/1188_1929.png`)),
     track(loadImg(`${BASE}datos/elevacion/1187_1930.png`)),
@@ -589,15 +590,17 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   const cx0 = MOSAICO.x0; const cx1 = MOSAICO.x0 + MOSAICO.nx; const cy0 = MOSAICO.y0; const cy1 = MOSAICO.y0 + MOSAICO.ny;
   const [qx0, qz0] = toXZ(cx0, cy0); const [qx1, qz1] = toXZ(cx1, cy1);
   const ctxGeo = new THREE.BufferGeometry();
-  ctxGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([qx0, 0.12, qz0, qx1, 0.12, qz0, qx0, 0.12, qz1, qx1, 0.12, qz1]), 3));
+  ctxGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([qx0, 1, qz0, qx1, 1, qz0, qx0, 1, qz1, qx1, 1, qz1]), 3));
   ctxGeo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
   ctxGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]), 2));
   ctxGeo.setIndex([0, 2, 1, 1, 2, 3]);
-  const ctxMat = new THREE.MeshStandardMaterial({ map: terrainMat.map, roughness: 1, metalness: 0, transparent: true, opacity: 0, depthWrite: false });
-  ctxMat.onBeforeCompile = (sh) => {
-    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n        float ed = min(min(vMapUv.x, 1.0 - vMapUv.x), min(vMapUv.y, 1.0 - vMapUv.y));\n        diffuseColor.a *= smoothstep(0.0, 0.06, ed);');
-  };
-  ctxMat.customProgramCacheKey = () => 'ctx-v1';
+  // solo la tierra de Cartagena (máscara de la costa de OSM): sin mar, para que no compita con el agua de la escena
+  const ctxMask = new THREE.Texture(cartagenaMascaraImg);
+  ctxMask.needsUpdate = true;
+  const ctxMat = new THREE.MeshStandardMaterial({
+    map: terrainMat.map, alphaMap: ctxMask, roughness: 1, metalness: 0, transparent: true, opacity: 0, alphaTest: 0.02,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
   const contexto = new THREE.Mesh(ctxGeo, ctxMat);
   contexto.visible = false;
   contexto.renderOrder = 1;
@@ -979,6 +982,9 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     const par = libre ? 0 : 1;
     camera.position.set(camLook.x + vi.px + offV.x + par * mouse.sx * dist * 0.012, camLook.y + offV.y - par * mouse.sy * dist * 0.008, camLook.z + vi.pz + offV.z);
     camera.lookAt(camLook.x + vi.px, camLook.y, camLook.z + vi.pz);
+    // plano cercano proporcional a la distancia: evita el parpadeo (z-fighting) de superficies casi coplanares lejos de la cámara
+    const nearW = THREE.MathUtils.clamp(dist * 0.02, 5, 250);
+    if (Math.abs(nearW - camera.near) / camera.near > 0.1) { camera.near = nearW; camera.updateProjectionMatrix(); }
 
     // casas
     cur.casas += (T.casas - cur.casas) * expo(dt, 3);
