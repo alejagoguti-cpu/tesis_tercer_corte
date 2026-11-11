@@ -16,7 +16,10 @@ import { rampa, percentil } from './paleta.js';
 //  - vías OSM en 3D coloreadas con los resultados de sintaxis espacial (sintaxis.json)
 // =============================================================================
 
-export const TASA = 1.8; // m/año
+export const TASA = 1.8; // m/año: retroceso del borde (tasa máxima registrada en el proyecto)
+// La tesis ubica la cota segura en +22 m "para los próximos 100 años": se toma como 22 m / 100 años = 0,22 m/año
+// de ascenso de la cota de afectación (supuesto lineal de trabajo, no una proyección científica).
+export const COTA_M_ANIO = 22 / 100;
 const MOSAICO = { x0: 9502, y0: 15426, nx: 10, ny: 17 };
 const VENTANA = { left: 231, top: 1734, w: 1445, h: 2578 };
 const EXAG = 2.6;
@@ -208,26 +211,14 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   for (let i = 0; i < distM.length; i++) distM[i] = land[i] ? Math.sqrt(sq[i]) * mpp : 0;
   if (disposed) return null;
 
-  // textura de pérdida: R = año en que la costa llega (×4, hasta 63,75), G = silueta
+  // textura de pérdida: R = año en que la afectación llega (×4, hasta 63,75), G = silueta
   const lostData = new Uint8Array(W * H * 4);
-  for (let i = 0; i < W * H; i++) {
-    lostData[i * 4] = land[i] ? Math.min(255, Math.round((distM[i] / TASA) * 4)) : 0;
-    lostData[i * 4 + 1] = maskAlpha[i];
-    lostData[i * 4 + 3] = 255;
-  }
+  for (let i = 0; i < W * H; i++) { lostData[i * 4 + 1] = maskAlpha[i]; lostData[i * 4 + 3] = 255; }
   const lostTex = new THREE.DataTexture(lostData, W, H, THREE.RGBAFormat);
   lostTex.minFilter = lostTex.magFilter = THREE.LinearFilter;
   lostTex.generateMipmaps = false;
-  lostTex.needsUpdate = true;
-
-  const lostByYear = new Float64Array(31);
-  for (let i = 0; i < distM.length; i++) {
-    if (!land[i]) continue;
-    const yv = distM[i] / TASA;
-    if (yv < 30) lostByYear[Math.floor(yv) + 1] += 1;
-  }
+  const lostY = new Float32Array(W * H); // año de afectación por píxel (se calcula tras cargar el relieve)
   const cumLostPx = new Float64Array(31);
-  for (let k = 1; k <= 30; k++) cumLostPx[k] = cumLostPx[k - 1] + lostByYear[k];
   const ha = (px) => (px * mpp * mpp) / 10000;
 
   const distAt = (X, Z) => {
@@ -241,7 +232,17 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     const i = y0 * W + x0;
     return distM[i] * (1 - ax) * (1 - ay) + distM[i + 1] * ax * (1 - ay) + distM[i + W] * (1 - ax) * ay + distM[i + W + 1] * ax * ay;
   };
-  const lostAtXZ = (X, Z) => { const d = distAt(X, Z); return d < 0 ? Infinity : d / TASA; };
+  const lostAtXZ = (X, Z) => {
+    const fx = ((X / mpt + txc - tx0) / (tx1 - tx0)) * W - 0.5;
+    const fy = ((Z / mpt + tyc - ty0) / (ty1 - ty0)) * H - 0.5;
+    if (fx < 0 || fy < 0 || fx > W - 1.001 || fy > H - 1.001) return Infinity;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const ax = fx - x0;
+    const ay = fy - y0;
+    const i = y0 * W + x0;
+    return lostY[i] * (1 - ax) * (1 - ay) + lostY[i + 1] * ax * (1 - ay) + lostY[i + W] * (1 - ax) * ay + lostY[i + W + 1] * ax * ay;
+  };
 
   // ---------- relieve ----------
   onProgreso(0.7, 'Levantando el relieve');
@@ -283,6 +284,100 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     const ay = fy - y0;
     return demPx(x0, y0) * (1 - ax) * (1 - ay) + demPx(x0 + 1, y0) * ax * (1 - ay) + demPx(x0, y0 + 1) * (1 - ax) * ay + demPx(x0 + 1, y0 + 1) * ax * ay;
   };
+
+  // ---------- cota: el agua llega primero a lo más bajo conectado con el mar ----------
+  // Inundación por prioridad sobre una rejilla de ~28 m: nivel mínimo que hay que alcanzar para llegar a cada celda.
+  // Año de llegada = nivel / COTA_M_ANIO. Sigue las curvas de nivel reales (relieve Terrarium, ~30 m de resolución).
+  const GR = 6;
+  const gw = Math.ceil(W / GR);
+  const gh = Math.ceil(H / GR);
+  const floodYears = new Float32Array(gw * gh);
+  {
+    const elev = new Float32Array(gw * gh);
+    const nivel = new Float32Array(gw * gh).fill(Infinity);
+    const cap = gw * gh * 5;
+    const hk = new Float32Array(cap);
+    const hv = new Int32Array(cap);
+    let hn = 0;
+    const push = (k, v) => {
+      let i = hn++;
+      while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; }
+      hk[i] = k; hv[i] = v;
+    };
+    let pk = 0;
+    let pv2 = 0;
+    const pop = () => {
+      pk = hk[0]; pv2 = hv[0];
+      hn--;
+      if (hn > 0) {
+        const k = hk[hn]; const v = hv[hn];
+        let i = 0;
+        for (;;) {
+          let c = 2 * i + 1;
+          if (c >= hn) break;
+          if (c + 1 < hn && hk[c + 1] < hk[c]) c++;
+          if (hk[c] >= k) break;
+          hk[i] = hk[c]; hv[i] = hv[c]; i = c;
+        }
+        hk[i] = k; hv[i] = v;
+      }
+    };
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        const px = Math.min(W - 1, gx * GR + (GR >> 1));
+        const py = Math.min(H - 1, gy * GR + (GR >> 1));
+        const c = gy * gw + gx;
+        const tx = tx0 + ((px + 0.5) / W) * (tx1 - tx0);
+        const ty = ty0 + ((py + 0.5) / H) * (ty1 - ty0);
+        elev[c] = Math.max(0, demAtTile(tx, ty));
+        if (!land[py * W + px]) { nivel[c] = 0; push(0, c); }
+      }
+    }
+    while (hn > 0) {
+      pop();
+      const lv = pk; const c = pv2;
+      if (lv > nivel[c]) continue;
+      const gx = c % gw;
+      const gy = (c / gw) | 0;
+      const vec = [gx > 0 ? c - 1 : -1, gx < gw - 1 ? c + 1 : -1, gy > 0 ? c - gw : -1, gy < gh - 1 ? c + gw : -1];
+      for (const n of vec) {
+        if (n < 0) continue;
+        const nl = Math.max(lv, elev[n]);
+        if (nl < nivel[n]) { nivel[n] = nl; push(nl, n); }
+      }
+    }
+    for (let c = 0; c < gw * gh; c++) floodYears[c] = Number.isFinite(nivel[c]) ? nivel[c] / COTA_M_ANIO : 999;
+  }
+
+  // año de afectación por píxel: lo que ocurra primero entre el retroceso del borde y la cota que sube
+  const calcularPerdida = (modelo) => {
+    const hist = new Float64Array(31);
+    for (let py = 0; py < H; py++) {
+      const fy = (py + 0.5) / GR - 0.5;
+      const gy0 = Math.max(0, Math.min(gh - 2, Math.floor(fy)));
+      const ay = Math.max(0, Math.min(1, fy - gy0));
+      for (let px = 0; px < W; px++) {
+        const i = py * W + px;
+        if (!land[i]) { lostY[i] = 0; lostData[i * 4] = 0; continue; }
+        let y = distM[i] / TASA;
+        if (modelo === 'cota') {
+          const fx = (px + 0.5) / GR - 0.5;
+          const gx0 = Math.max(0, Math.min(gw - 2, Math.floor(fx)));
+          const ax = Math.max(0, Math.min(1, fx - gx0));
+          const c = gy0 * gw + gx0;
+          const f = floodYears[c] * (1 - ax) * (1 - ay) + floodYears[c + 1] * ax * (1 - ay) + floodYears[c + gw] * (1 - ax) * ay + floodYears[c + gw + 1] * ax * ay;
+          if (f < y) y = f;
+        }
+        lostY[i] = y;
+        lostData[i * 4] = Math.min(255, Math.round(y * 4));
+        if (y < 30) hist[Math.floor(y) + 1] += 1;
+      }
+    }
+    cumLostPx[0] = 0;
+    for (let k = 1; k <= 30; k++) cumLostPx[k] = cumLostPx[k - 1] + hist[k];
+    lostTex.needsUpdate = true;
+  };
+  calcularPerdida('cota');
 
   const NX = small ? 130 : 180;
   const NY = Math.round((NX * H) / W);
@@ -420,7 +515,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     const [lo, la] = modelToLL(x, y);
     const [X, Z] = llToXZ(lo, la);
     const d = distAt(X, Z);
-    return { X, Z, i, size, dense, d, lostAt: d < 0 ? -1 : d / TASA, dc: Math.hypot(X - vx, Z - vz) };
+    return { X, Z, i, size, dense, d, lostAt: d < 0 ? -1 : lostAtXZ(X, Z), dc: Math.hypot(X - vx, Z - vz) };
   }).filter((t) => t.d > 0)
     .sort((a, b) => a.dc - b.dc)
     .slice(0, small ? 700 : 1800)
@@ -457,7 +552,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     }
     const dm = distAt(cx, cy);
     if (dm < 0) continue;
-    houses.push({ x: cx, z: cy, ang, w: Math.max(3, maxA - minA), d: Math.max(3, maxB - minB), h: refH || 4, y: heightAtXZ(cx, cy), lostAt: dm / TASA });
+    houses.push({ x: cx, z: cy, ang, w: Math.max(3, maxA - minA), d: Math.max(3, maxB - minB), h: refH || 4, y: heightAtXZ(cx, cy), lostAt: lostAtXZ(cx, cy) });
   }
   const houseGeo = new THREE.BoxGeometry(1, 1, 1);
   houseGeo.translate(0, 0.5, 0);
@@ -584,6 +679,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   }
 
   // riesgo de erosión sobre cada red
+  const calcularRiesgo = () => {
   const riesgoRed = {};
   for (const [nombre, r] of Object.entries(redes)) {
     const acc = { 10: 0, 20: 0, 30: 0 };
@@ -608,6 +704,9 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
       altos, altosLost,
     };
   }
+  return riesgoRed;
+  };
+  const riesgoRed = calcularRiesgo();
 
   // ---------- muelles y rutas esquemáticas de lanchas ----------
   const rutasGroup = new THREE.Group();
@@ -737,6 +836,23 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     riesgoRed,
     km: { peatonal: redes.peatonal.km, motos: redes.motos.km },
     porTipo: { peatonal: redes.peatonal.porTipo, motos: redes.motos.porTipo },
+    modelo: 'cota',
+  };
+  let curModelo = 'cota';
+  let alCambiarModelo = () => {};
+  const refrescarStats = () => {
+    stats.ha = { total: ha(landPx), 10: ha(cumLostPx[10]), 20: ha(cumLostPx[20]), 30: ha(cumLostPx[30]) };
+    stats.pct = { 10: (100 * cumLostPx[10]) / landPx, 20: (100 * cumLostPx[20]) / landPx, 30: (100 * cumLostPx[30]) / landPx };
+    stats.casas = { total: houses.length, 10: casasPerdidas(10), 20: casasPerdidas(20), 30: casasPerdidas(30) };
+    stats.riesgoRed = calcularRiesgo();
+    stats.modelo = curModelo;
+  };
+  const recalcularTodo = (modelo) => {
+    calcularPerdida(modelo);
+    houses.forEach((hh) => { hh.lostAt = lostAtXZ(hh.x, hh.z); });
+    treeAll.forEach((tr) => { tr.lostAt = lostAtXZ(tr.x, tr.z); });
+    Object.values(redes).forEach((r) => { r.piezas.forEach((p) => { p.lostAt = lostAtXZ(p.mx, p.mz); }); r.firma = ''; });
+    refrescarStats();
   };
 
   // ---------- poses de cámara ----------
@@ -763,7 +879,15 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   };
 
   // ---------- estado objetivo y bucle ----------
-  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0 };
+  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'cota' };
+  // vista libre del usuario (zoom, giro, desplazamiento) sobre la pose de cada paso
+  const vt = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
+  const vi = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
+  let lastBase = 8000;
+  const sph = new THREE.Spherical();
+  const offV = new THREE.Vector3();
+  const dirV2 = new THREE.Vector3();
+  const resetVista = () => { vt.zoom = 1; vt.az = 0; vt.el = 0; vt.px = 0; vt.pz = 0; };
   const cur = { year: 0, dim: 0, casas: 1, rutas: 0, contexto: 0, escala: CASA_ESCALA };
   const camPos = POSES.hero(0).pos.clone();
   const camLook = POSES.hero(0).look.clone();
@@ -806,6 +930,15 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     last = now;
     const t = (now - t0) / 1000;
 
+    // modelo de afectación (solo retroceso / retroceso + cota)
+    if (T.modelo !== curModelo) {
+      curModelo = T.modelo;
+      recalcularTodo(curModelo);
+      houseKey = '';
+      treesYear = -2;
+      alCambiarModelo();
+    }
+
     // erosión
     cur.year += (T.year - cur.year) * expo(dt, reduce ? 30 : 5);
     if (Math.abs(T.year - cur.year) < 0.002) cur.year = T.year;
@@ -830,9 +963,22 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     camLook.lerp(pose.look, kc);
     mouse.sx += (mouse.x - mouse.sx) * 0.05;
     mouse.sy += (mouse.y - mouse.sy) * 0.05;
-    const dist = camPos.distanceTo(camLook);
-    camera.position.set(camPos.x + mouse.sx * dist * 0.012, camPos.y - mouse.sy * dist * 0.008, camPos.z);
-    camera.lookAt(camLook);
+    // vista libre: zoom, giro y desplazamiento del usuario
+    const kv = expo(dt, 9);
+    vi.zoom += (vt.zoom - vi.zoom) * kv; vi.az += (vt.az - vi.az) * kv; vi.el += (vt.el - vi.el) * kv;
+    vi.px += (vt.px - vi.px) * kv; vi.pz += (vt.pz - vi.pz) * kv;
+    offV.copy(camPos).sub(camLook);
+    lastBase = Math.max(200, offV.length());
+    sph.setFromVector3(offV);
+    sph.radius = lastBase * Math.max(vi.zoom, 110 / lastBase);
+    sph.theta += vi.az;
+    sph.phi = THREE.MathUtils.clamp(sph.phi + vi.el, 0.12, 1.5);
+    offV.setFromSpherical(sph);
+    const dist = offV.length();
+    const libre = Math.abs(vt.zoom - 1) + Math.abs(vt.az) + Math.abs(vt.el) + Math.abs(vt.px) + Math.abs(vt.pz) > 0.001;
+    const par = libre ? 0 : 1;
+    camera.position.set(camLook.x + vi.px + offV.x + par * mouse.sx * dist * 0.012, camLook.y + offV.y - par * mouse.sy * dist * 0.008, camLook.z + vi.pz + offV.z);
+    camera.lookAt(camLook.x + vi.px, camLook.y, camLook.z + vi.pz);
 
     // casas
     cur.casas += (T.casas - cur.casas) * expo(dt, 3);
@@ -912,7 +1058,26 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   return {
     stats,
     datos: sintaxis,
-    set(parcial) { Object.assign(T, parcial); },
+    set(parcial) {
+      if (parcial.cam && parcial.cam !== T.cam) resetVista();
+      Object.assign(T, parcial);
+    },
+    alCambiarModelo(fn) { alCambiarModelo = fn; },
+    vista: {
+      zoom(f) { vt.zoom = THREE.MathUtils.clamp(vt.zoom * f, Math.max(0.01, 110 / lastBase), 1.8); },
+      rotar(dx, dy) { vt.az -= dx * 0.006; vt.el -= dy * 0.005; },
+      mover(dx, dy) {
+        camera.getWorldDirection(dirV2);
+        const fl = Math.hypot(dirV2.x, dirV2.z) || 1;
+        const fx = dirV2.x / fl; const fz = dirV2.z / fl;
+        const rx = -fz; const rz = fx;
+        const s = camera.position.distanceTo(camLook) * 0.0016;
+        vt.px += (-rx * dx + fx * dy) * s;
+        vt.pz += (-rz * dx + fz * dy) * s;
+      },
+      reset: resetVista,
+      activa: () => Math.abs(vt.zoom - 1) + Math.abs(vt.az) + Math.abs(vt.el) + Math.abs(vt.px) + Math.abs(vt.pz) > 0.001,
+    },
     estado: T,
     anioActual: () => cur.year,
     dispose() {

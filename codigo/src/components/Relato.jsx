@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gradienteCSS } from '../lib/paleta.js';
-import { GRUPOS_TIPO, TASA } from '../lib/escena.js';
+import { GRUPOS_TIPO, TASA, COTA_M_ANIO } from '../lib/escena.js';
 import Red from './Red.jsx';
 import Social from './Social.jsx';
 
@@ -126,7 +126,7 @@ function Cabecera({ cap }) {
 const contenedorPanel =
   'vidrio fixed z-20 bottom-3 left-3 right-3 max-h-[58svh] overflow-y-auto p-4 sm:bottom-6 sm:left-8 sm:right-auto sm:max-h-[calc(100svh-7rem)] sm:w-[25rem] sm:p-5';
 
-function PanelErosion({ stats, anio, modo }) {
+function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
   const casas = stats.casasAnio(anio);
   const ha = stats.haAnio(anio);
   const pct = stats.pctAnio(anio);
@@ -134,12 +134,17 @@ function PanelErosion({ stats, anio, modo }) {
   return (
     <aside className={`${contenedorPanel} entra`} aria-live="polite">
       <p className="etiqueta text-arcilla">03 · Si no se frena la erosión</p>
+      <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Modelo de afectación">
+        {[['cota', 'Retroceso + cota'], ['retroceso', 'Solo retroceso']].map(([v, t]) => (
+          <button key={v} type="button" className="ficha" aria-pressed={ctrl.modelo === v} onClick={() => setCtrl((c) => ({ ...c, modelo: v }))}>{t}</button>
+        ))}
+      </div>
       <div className="mt-3 flex items-end justify-between gap-4">
         <p className="num text-5xl font-semibold leading-none tracking-tight">
           {anio === 0 ? 'Hoy' : `+${anio}`}
           {anio > 0 && <span className="ml-2 text-base font-normal text-white/55">años</span>}
         </p>
-        <p className="num text-right text-xs text-white/55">{fmt(m, 0)} m de<br />costa perdida</p>
+        <p className="num text-right text-xs leading-snug text-white/55">{fmt(m, 0)} m de retroceso{ctrl.modelo === 'cota' && <><br />cota +{fmt(COTA_M_ANIO * anio, 1)} m</>}</p>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-4 border-t border-white/14 pt-3">
@@ -169,10 +174,12 @@ function PanelErosion({ stats, anio, modo }) {
 
       <p className="mt-4 text-[13px] leading-relaxed text-white/80">
         {modo === 'despues'
-          ? 'Así quedaría la isla: el mar ocupa la franja que se pierde y las viviendas dentro de ella desaparecen.'
+          ? 'Así quedaría la isla: el mar ocupa lo que se pierde y las viviendas dentro de ello desaparecen.'
           : anio === 0
-            ? 'La línea de costa actual, según la silueta oficial de la isla. Desplázate: la costa empieza a retroceder.'
-            : 'En rojo, la tierra que el mar ocupa. El frente naranja es la costa de ese año.'}
+            ? 'La costa actual, según la silueta oficial de la isla. Desplázate: el mar empieza a avanzar.'
+            : ctrl.modelo === 'cota'
+              ? 'En rojo, lo que queda bajo el borde que retrocede o bajo la cota que sube, siguiendo las curvas de nivel. El frente naranja es el avance de ese año.'
+              : 'En rojo, la tierra que el mar ocupa por el retroceso del borde. El frente naranja es la costa de ese año.'}
       </p>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/60">
         {[['#991b1b', 'hasta 10 años'], ['#dc2626', '10 a 20'], ['#f87171', '20 a 30']].map(([c, t]) => (
@@ -180,7 +187,10 @@ function PanelErosion({ stats, anio, modo }) {
         ))}
       </div>
       <p className="mt-3 border-t border-white/12 pt-2.5 text-[11px] leading-snug text-white/45">
-        Retroceso uniforme de {fmt(TASA, 1)} m/año (tasa máxima registrada); la erosión real varía por tramo. Construcciones del archivo de la tesis, con alturas de referencia.
+        {ctrl.modelo === 'cota'
+          ? `Retroceso de ${fmt(TASA, 1)} m/año más una cota que sube ${fmt(COTA_M_ANIO, 2)} m/año (+22 m en 100 años, la cota segura de la tesis). Supuesto lineal de trabajo, no una proyección científica. Relieve de unos 30 m de resolución, sin levantamiento topográfico.`
+          : `Retroceso uniforme de ${fmt(TASA, 1)} m/año (tasa máxima registrada); la erosión real varía por tramo.`}
+        {' '}Construcciones del archivo de la tesis, con alturas de referencia.
       </p>
     </aside>
   );
@@ -387,14 +397,14 @@ function Indice({ activo, onIr }) {
 }
 
 /* ---------- cierre ---------- */
-function Cierre({ api }) {
+function Cierre({ api, version }) {
   const d = api?.datos;
   const s = api?.stats;
   const hallazgos = useMemo(() => {
     if (!d || !s) return [];
     const top = (red, k) => d[red][k]?.[0]?.nombre;
     const lista = [
-      `Con retroceso uniforme de ${fmt(TASA, 1)} m/año, a 30 años se pierden ${fmt(s.ha[30], 0)} ha (${fmt(s.pct[30], 1)} % de la isla) y ${fmt(s.casas[30])} de las ${fmt(s.casas.total)} construcciones del archivo.`,
+      `Con retroceso de ${fmt(TASA, 1)} m/año${s.modelo === 'cota' ? ` y una cota que sube ${fmt(COTA_M_ANIO, 2)} m/año` : ''}, a 30 años se pierden ${fmt(s.ha[30], 0)} ha (${fmt(s.pct[30], 1)} % de la isla) y ${fmt(s.casas[30])} de las ${fmt(s.casas.total)} construcciones del archivo.`,
       (() => {
         const nombres = [top('peatonal', 'top_integracion'), top('peatonal', 'top_eleccion'), top('motos', 'top_integracion'), top('motos', 'top_eleccion')];
         return new Set(nombres).size === 1
@@ -405,7 +415,7 @@ function Cierre({ api }) {
       `De los ${s.riesgoRed.peatonal.altos} ejes de mayor elección de la red peatonal, ${s.riesgoRed.peatonal.altosLost[30]} quedan dentro de esa franja a 30 años.`,
     ];
     return lista;
-  }, [d, s]);
+  }, [d, s, version]);
 
   return (
     <section id="cierre" className="relative bg-papel text-tinta">
@@ -429,7 +439,7 @@ function Cierre({ api }) {
             <h3 className="etiqueta text-tinta/55">Límites de este análisis</h3>
             <ul className="regla mt-4">
               {[
-                'La erosión se modela como un retroceso uniforme de toda la costa. No distingue tramos, mareas ni obras de defensa.',
+                'La erosión se modela como un retroceso uniforme del borde más una cota que sube de forma lineal (+22 m en 100 años, supuesto de trabajo). No distingue tramos, mareas ni obras de defensa.',
                 'Las vías vienen de OpenStreetMap con cobertura parcial. La red de motos es una suposición según la etiqueta de cada vía.',
                 'La sintaxis es una reimplementación propia del método angular de depthmapX y no se comparó con su salida.',
                 'No hay una red de lanchas con datos reales: solo dos rutas esquemáticas. Lo medido es el acceso a muelles mapeados.',
@@ -466,13 +476,79 @@ function Cierre({ api }) {
   );
 }
 
+/* ---------- zoom y exploración libre del mapa 3D ---------- */
+function ControlesVista({ api, explorar, setExplorar, panelOculto, setPanelOculto }) {
+  const btn = 'ficha !h-9 !w-9 !px-0 grid place-items-center !text-base';
+  return (
+    <div className="fixed right-3 top-14 z-20 flex flex-col items-end gap-2 sm:right-6 sm:top-16">
+      <button type="button" className="ficha !h-9 vidrio !rounded-[3px]" aria-pressed={explorar} onClick={() => setExplorar((e) => !e)}>
+        {explorar ? 'Explorando · salir' : 'Explorar el mapa'}
+      </button>
+      <button type="button" className="ficha !h-9 vidrio !rounded-[3px]" aria-pressed={panelOculto} onClick={() => setPanelOculto((v) => !v)}>{panelOculto ? 'Mostrar panel' : 'Ocultar panel'}</button>
+      <div className="flex gap-1.5">
+        <button type="button" className={`${btn} vidrio !rounded-[3px]`} aria-label="Acercar" onClick={() => api.vista.zoom(0.65)}>+</button>
+        <button type="button" className={`${btn} vidrio !rounded-[3px]`} aria-label="Alejar" onClick={() => api.vista.zoom(1 / 0.65)}>−</button>
+        <button type="button" className={`${btn} vidrio !rounded-[3px]`} aria-label="Restablecer la vista" title="Restablecer la vista" onClick={() => api.vista.reset()}>⟲</button>
+      </div>
+      {explorar && (
+        <p className="vidrio max-w-[15rem] p-2.5 text-right text-[11px] leading-snug text-white/80">
+          Arrastra para girar · Mayús o clic derecho para mover · rueda o pellizco para acercar. Sal para volver a desplazarte por la página.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CapaExplorar({ api }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !api) return undefined;
+    const ptrs = new Map();
+    const down = (e) => { try { el.setPointerCapture(e.pointerId); } catch { /* sin captura */ } ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); };
+    const move = (e) => {
+      const p = ptrs.get(e.pointerId);
+      if (!p) return;
+      const dx = e.clientX - p.x;
+      const dy = e.clientY - p.y;
+      const antes = [...ptrs.values()].map((v) => ({ ...v }));
+      p.x = e.clientX; p.y = e.clientY;
+      if (ptrs.size >= 2) {
+        const ahora = [...ptrs.values()];
+        const d0 = Math.hypot(antes[0].x - antes[1].x, antes[0].y - antes[1].y);
+        const d1 = Math.hypot(ahora[0].x - ahora[1].x, ahora[0].y - ahora[1].y);
+        if (d1 > 0 && d0 > 0) api.vista.zoom(d0 / d1);
+        api.vista.mover(dx / 2, dy / 2);
+      } else if (e.shiftKey || (e.buttons & 2)) api.vista.mover(dx, dy);
+      else api.vista.rotar(dx, dy);
+    };
+    const up = (e) => { ptrs.delete(e.pointerId); };
+    const wheel = (e) => { e.preventDefault(); api.vista.zoom(e.deltaY > 0 ? 1.18 : 1 / 1.18); };
+    const menu = (e) => e.preventDefault();
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('wheel', wheel, { passive: false });
+    el.addEventListener('contextmenu', menu);
+    return () => {
+      el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+      el.removeEventListener('wheel', wheel); el.removeEventListener('contextmenu', menu);
+    };
+  }, [api]);
+  return <div ref={ref} className="fixed inset-0 z-[15] cursor-grab touch-none active:cursor-grabbing" aria-hidden="true" />;
+}
 /* ---------- relato ---------- */
 export default function Relato({ api, sinEscena }) {
   const [cap, setCap] = useState('portada');
   const [pasoIdx, setPasoIdx] = useState(0);
   const [anio, setAnio] = useState(0);
   const [modo, setModo] = useState('perdida');
-  const [ctrl, setCtrl] = useState({ radio: 'n', redRiesgo: 'peatonal', anioRiesgo: 30 });
+  const [ctrl, setCtrl] = useState({ radio: 'n', redRiesgo: 'peatonal', anioRiesgo: 30, modelo: 'cota' });
+  const [version, setVersion] = useState(0);
+  const [explorar, setExplorar] = useState(false);
+  const [panelOculto, setPanelOculto] = useState(false);
   const ctrlRef = useRef(ctrl);
   ctrlRef.current = ctrl;
   const S = useRef({ cap: 'portada', pasoIdx: 0, p: 0 });
@@ -484,7 +560,7 @@ export default function Relato({ api, sinEscena }) {
     if (!a) return;
     const { cap: c, pasoIdx: pi, p } = S.current;
     const k = ctrlRef.current;
-    const base = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0 };
+    const base = { modelo: k.modelo, cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0 };
     let est = base;
     if (c === 'portada') est = base;
     else if (c === 'problema') est = { ...base, cam: 'problema', dim: 0.1 };
@@ -540,6 +616,8 @@ export default function Relato({ api, sinEscena }) {
   }, [aplicar, api]);
 
   useEffect(() => { aplicar(); }, [ctrl, api, aplicar]);
+  useEffect(() => { if (!['erosion', 'vias', 'sintaxis'].includes(cap)) setExplorar(false); }, [cap]);
+  useEffect(() => { api?.alCambiarModelo(() => setVersion((v) => v + 1)); }, [api]);
 
   const irAPaso = (i) => {
     const el = document.getElementById('sintaxis');
@@ -605,17 +683,21 @@ export default function Relato({ api, sinEscena }) {
       {/* 04 · sintaxis */}
       <section id="sintaxis" style={{ height: `${PASOS.length * ALTO_PASO}svh` }} aria-label="Sintaxis espacial" />
 
+      {/* zoom y exploración del mapa 3D */}
+      {api && ['erosion', 'vias', 'sintaxis'].includes(cap) && <ControlesVista api={api} explorar={explorar} setExplorar={setExplorar} panelOculto={panelOculto} setPanelOculto={setPanelOculto} />}
+      {api && explorar && ['erosion', 'vias', 'sintaxis'].includes(cap) && <CapaExplorar api={api} />}
+
       {/* paneles flotantes */}
-      {api && cap === 'erosion' && <PanelErosion stats={stats} anio={anio} modo={modo} />}
-      {api && cap === 'vias' && <PanelVias stats={stats} datos={datos} />}
+      {api && !panelOculto && cap === 'erosion' && <PanelErosion key={version} stats={stats} anio={anio} modo={modo} ctrl={ctrl} setCtrl={setCtrl} />}
+      {api && !panelOculto && cap === 'vias' && <PanelVias stats={stats} datos={datos} />}
       {api && cap === 'sintaxis' && (
         <>
-          <PanelSintaxis paso={PASOS[pasoIdx]} datos={datos} stats={stats} ctrl={ctrl} setCtrl={setCtrl} />
+          {!panelOculto && <PanelSintaxis paso={PASOS[pasoIdx]} datos={datos} stats={stats} ctrl={ctrl} setCtrl={setCtrl} />}
           <Indice activo={pasoIdx} onIr={irAPaso} />
         </>
       )}
 
-      <Cierre api={api} />
+      <Cierre api={api} version={version} />
     </div>
   );
 }
