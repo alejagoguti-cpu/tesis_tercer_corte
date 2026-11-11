@@ -574,7 +574,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     r.piezas.forEach((p) => { tot += p.largo; for (const y of [10, 20, 30]) if (p.lostAt <= y) acc[y] += p.largo; });
     // elección: ¿cuántos de los ejes de mayor elección (10 % superior, radio n) caen en la franja?
     const nach = r.d.medidas.n.nach;
-    const umbral = percentil(nach, 0.9);
+    const umbral = percentil(nach.filter((_, s) => r.d.comp[s] === r.d.mayor_comp), 0.9);
     const segLost = new Float64Array(r.d.segmentos).fill(Infinity);
     r.piezas.forEach((p) => { if (p.lostAt < segLost[p.s]) segLost[p.s] = p.lostAt; });
     let altos = 0; const altosLost = { 10: 0, 20: 0, 30: 0 };
@@ -645,8 +645,9 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     const mayor = d.mayor_comp;
     if (capa === 'nain' || capa === 'nach') {
       const arr = d.medidas[radio][capa];
-      const lo = percentil(arr, 0.02);
-      const hi = percentil(arr, 0.98);
+      const principal = arr.filter((_, s) => d.comp[s] === mayor); // los componentes pequeños inflan la escala
+      const lo = percentil(principal, 0.02);
+      const hi = percentil(principal, 0.98);
       norm = (s) => (d.comp[s] !== mayor ? -1 : clamp01((arr[s] - lo) / (hi - lo || 1)));
     } else if (capa === 'muelle_dist') {
       const arr = muelles.dist_m;
