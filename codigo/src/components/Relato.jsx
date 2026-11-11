@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gradienteCSS } from '../lib/paleta.js';
-import { GRUPOS_TIPO, TASA, COTA_M_ANIO } from '../lib/escena.js';
+import { GRUPOS_TIPO, TASA, nivelAgua } from '../lib/escena.js';
 import Red from './Red.jsx';
 import Social from './Social.jsx';
 
@@ -135,7 +135,7 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
     <aside className={`${contenedorPanel} entra`} aria-live="polite">
       <p className="etiqueta text-arcilla">03 · Si no se frena la erosión</p>
       <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Modelo de afectación">
-        {[['cota', 'Retroceso + cota'], ['retroceso', 'Solo retroceso']].map(([v, t]) => (
+        {[['cota', 'Retroceso + inundación'], ['retroceso', 'Solo retroceso']].map(([v, t]) => (
           <button key={v} type="button" className="ficha" aria-pressed={ctrl.modelo === v} onClick={() => setCtrl((c) => ({ ...c, modelo: v }))}>{t}</button>
         ))}
       </div>
@@ -144,7 +144,7 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
           {anio === 0 ? 'Hoy' : `+${anio}`}
           {anio > 0 && <span className="ml-2 text-base font-normal text-white/55">años</span>}
         </p>
-        <p className="num text-right text-xs leading-snug text-white/55">{fmt(m, 0)} m de retroceso{ctrl.modelo === 'cota' && <><br />cota +{fmt(COTA_M_ANIO * anio, 1)} m</>}</p>
+        <p className="num text-right text-xs leading-snug text-white/55">{fmt(m, 0)} m de retroceso{ctrl.modelo === 'cota' && <><br />agua +{fmt(nivelAgua(anio), 2)} m</>}</p>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-4 border-t border-white/14 pt-3">
@@ -178,7 +178,7 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
           : anio === 0
             ? 'La costa actual, según la silueta oficial de la isla. Desplázate: el mar empieza a avanzar.'
             : ctrl.modelo === 'cota'
-              ? 'En rojo, lo que queda bajo el borde que retrocede o bajo la cota que sube, siguiendo las curvas de nivel. El frente naranja es el avance de ese año.'
+              ? 'En rojo, lo que el borde que retrocede o el agua que sube alcanza, siguiendo las curvas de nivel. El frente naranja es el avance de ese año.'
               : 'En rojo, la tierra que el mar ocupa por el retroceso del borde. El frente naranja es la costa de ese año.'}
       </p>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/60">
@@ -188,7 +188,7 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
       </div>
       <p className="mt-3 border-t border-white/12 pt-2.5 text-[11px] leading-snug text-white/45">
         {ctrl.modelo === 'cota'
-          ? `Retroceso de ${fmt(TASA, 1)} m/año más una cota que sube ${fmt(COTA_M_ANIO, 2)} m/año (+22 m en 100 años, la cota segura de la tesis). Supuesto lineal de trabajo, no una proyección científica. Relieve de unos 30 m de resolución, sin levantamiento topográfico.`
+          ? `Retroceso de ${fmt(TASA, 1)} m/año más la inundación de la tierra baja con el nivel del agua de Cartagena: marea 0,20 m + tormenta 0,20 m + ascenso RCP 4.5 + subsidencia (Orejarena-Rondón et al., 2019). Son datos de Cartagena aplicados a la isla. El relieve tiene unos 30 m de resolución y varios metros de error vertical: la inundación es indicativa.`
           : `Retroceso uniforme de ${fmt(TASA, 1)} m/año (tasa máxima registrada); la erosión real varía por tramo.`}
         {' '}Construcciones del archivo de la tesis, con alturas de referencia.
       </p>
@@ -404,7 +404,7 @@ function Cierre({ api, version }) {
     if (!d || !s) return [];
     const top = (red, k) => d[red][k]?.[0]?.nombre;
     const lista = [
-      `Con retroceso de ${fmt(TASA, 1)} m/año${s.modelo === 'cota' ? ` y una cota que sube ${fmt(COTA_M_ANIO, 2)} m/año` : ''}, a 30 años se pierden ${fmt(s.ha[30], 0)} ha (${fmt(s.pct[30], 1)} % de la isla) y ${fmt(s.casas[30])} de las ${fmt(s.casas.total)} construcciones del archivo.`,
+      `Con retroceso de ${fmt(TASA, 1)} m/año${s.modelo === 'cota' ? ` y un nivel de agua de +${fmt(nivelAgua(30), 2)} m (marea, tormenta, ascenso y subsidencia)` : ''}, a 30 años se pierden ${fmt(s.ha[30], 0)} ha (${fmt(s.pct[30], 1)} % de la isla) y ${fmt(s.casas[30])} de las ${fmt(s.casas.total)} construcciones del archivo.`,
       (() => {
         const nombres = [top('peatonal', 'top_integracion'), top('peatonal', 'top_eleccion'), top('motos', 'top_integracion'), top('motos', 'top_eleccion')];
         return new Set(nombres).size === 1
@@ -439,7 +439,7 @@ function Cierre({ api, version }) {
             <h3 className="etiqueta text-tinta/55">Límites de este análisis</h3>
             <ul className="regla mt-4">
               {[
-                'La erosión se modela como un retroceso uniforme del borde más una cota que sube de forma lineal (+22 m en 100 años, supuesto de trabajo). No distingue tramos, mareas ni obras de defensa.',
+                'La erosión se modela como un retroceso uniforme del borde más la inundación de la tierra baja con niveles medidos en Cartagena, no en la isla. El relieve (30 m de resolución) tiene varios metros de error vertical. No distingue tramos ni obras de defensa.',
                 'Las vías vienen de OpenStreetMap con cobertura parcial. La red de motos es una suposición según la etiqueta de cada vía.',
                 'La sintaxis es una reimplementación propia del método angular de depthmapX y no se comparó con su salida.',
                 'No hay una red de lanchas con datos reales: solo dos rutas esquemáticas. Lo medido es el acceso a muelles mapeados.',
@@ -467,7 +467,7 @@ function Cierre({ api, version }) {
         <footer className="mt-20 border-t border-tinta/20 pt-6 text-xs leading-relaxed text-tinta/60">
           <p>Alejandra Gómez · Ana Casas · Tesis de grado en Arquitectura y Urbanismo · 2026</p>
           <p className="mt-2">
-            Fuentes: imagen satelital Esri World Imagery (Esri, Maxar, Earthstar Geographics y la comunidad GIS); relieve Terrain Tiles (Mapzen / AWS Open Data); vías y muelles © OpenStreetMap contributors (ODbL);
+            Fuentes: imagen satelital Esri World Imagery (Esri, Maxar, Earthstar Geographics y la comunidad GIS); relieve Terrain Tiles (Mapzen / AWS Open Data); línea de costa y silueta de la isla © OpenStreetMap contributors; niveles de marea, tormenta y ascenso del mar de Orejarena-Rondón, Sayol et al. (2019), Frontiers in Marine Science 6:614; vías y muelles © OpenStreetMap contributors (ODbL);
             árboles Island Tree 01 y 02, Poly Haven (CC0); método de sintaxis espacial de depthmapX (UCL Space Group, GPL-3.0).
           </p>
         </footer>

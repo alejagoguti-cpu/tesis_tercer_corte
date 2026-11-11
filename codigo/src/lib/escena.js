@@ -17,9 +17,40 @@ import { rampa, percentil } from './paleta.js';
 // =============================================================================
 
 export const TASA = 1.8; // m/año: retroceso del borde (tasa máxima registrada en el proyecto)
-// La tesis ubica la cota segura en +22 m "para los próximos 100 años": se toma como 22 m / 100 años = 0,22 m/año
-// de ascenso de la cota de afectación (supuesto lineal de trabajo, no una proyección científica).
-export const COTA_M_ANIO = 22 / 100;
+
+// Nivel del agua que alcanza la tierra baja en cada horizonte (años desde hoy), con valores medidos para Cartagena:
+//  - marea astronómica de sicigia 0,20 m y sobreelevación de tormenta de 10 años de retorno 0,20 m;
+//  - ascenso del nivel del mar RCP 4.5: +0,11 m (2025), +0,24 (2050), +0,38 (2075), +0,52 (2100), contado desde 2025;
+//  - subsidencia del terreno de 1,78 mm/año (estación geodésica de Cartagena).
+// Fuente: Orejarena-Rondón, Sayol et al. (2019), Frontiers in Marine Science 6:614 (barra de Bocagrande, Cartagena);
+// subsidencia: Andrade-Amaya et al. (2017) citado allí. Se aplican a Tierra Bomba por cercanía: no son mediciones de la isla.
+export const MAREA_M = 0.2;
+export const TORMENTA_M = 0.2;
+export const SUBSIDENCIA_M_ANIO = 0.00178;
+const SLR_RCP45 = [[0, 0], [25, 0.13], [50, 0.27], [75, 0.41]]; // [años desde 2025, ascenso en m desde 2025]
+const slrDelta = (t) => {
+  for (let i = 0; i < SLR_RCP45.length - 1; i++) {
+    const [t0, v0] = SLR_RCP45[i];
+    const [t1, v1] = SLR_RCP45[i + 1];
+    if (t <= t1) return v0 + ((v1 - v0) * (t - t0)) / (t1 - t0);
+  }
+  const [t0, v0] = SLR_RCP45[SLR_RCP45.length - 2];
+  const [t1, v1] = SLR_RCP45[SLR_RCP45.length - 1];
+  return v1 + ((v1 - v0) * (t - t1)) / (t1 - t0);
+};
+export const nivelAgua = (t) => MAREA_M + TORMENTA_M + slrDelta(t) + SUBSIDENCIA_M_ANIO * t;
+// inversa tabulada: año en que el nivel del agua alcanza una elevación dada
+const TAB_PASO = 0.25;
+const TAB_N = 241; // 0..60 años
+const TAB = Float32Array.from({ length: TAB_N }, (_, i) => nivelAgua(i * TAB_PASO));
+const anioDeNivel = (L) => {
+  if (L <= TAB[0]) return 0;
+  if (L > TAB[TAB_N - 1]) return 999;
+  let lo = 0;
+  let hi = TAB_N - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (TAB[m] >= L) hi = m; else lo = m; }
+  return (lo + (L - TAB[lo]) / (TAB[hi] - TAB[lo])) * TAB_PASO;
+};
 const MOSAICO = { x0: 9502, y0: 15426, nx: 10, ny: 17 };
 const VENTANA = { left: 231, top: 1734, w: 1445, h: 2578 };
 const EXAG = 2.6;
@@ -154,7 +185,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
 
   const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, cartagenaMascaraImg, ...demImgs] = await Promise.all([
     track(loadImg(`${BASE}assets/texturas/sat_base.jpg`)),
-    track(loadImg(`${BASE}datos/isla_mascara.png`)),
+    track(loadImg(`${BASE}datos/isla_mascara_osm.png`)),
     track(loadImg(`${BASE}assets/texturas/tierrabomba_satelite.jpg`)),
     track(jsonOf(`${BASE}assets/data/georef.json`)),
     track(jsonOf(`${BASE}assets/data/vegetacion.json`)),
@@ -288,7 +319,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
 
   // ---------- cota: el agua llega primero a lo más bajo conectado con el mar ----------
   // Inundación por prioridad sobre una rejilla de ~28 m: nivel mínimo que hay que alcanzar para llegar a cada celda.
-  // Año de llegada = nivel / COTA_M_ANIO. Sigue las curvas de nivel reales (relieve Terrarium, ~30 m de resolución).
+  // Año de llegada = año en que el nivel del agua (nivelAgua) alcanza ese nivel. Sigue las curvas de nivel reales (relieve Terrarium, ~30 m de resolución).
   const GR = 6;
   const gw = Math.ceil(W / GR);
   const gh = Math.ceil(H / GR);
@@ -347,7 +378,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         if (nl < nivel[n]) { nivel[n] = nl; push(nl, n); }
       }
     }
-    for (let c = 0; c < gw * gh; c++) floodYears[c] = Number.isFinite(nivel[c]) ? nivel[c] / COTA_M_ANIO : 999;
+    for (let c = 0; c < gw * gh; c++) floodYears[c] = Number.isFinite(nivel[c]) ? anioDeNivel(nivel[c]) : 999;
   }
 
   // año de afectación por píxel: lo que ocurra primero entre el retroceso del borde y la cota que sube
