@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --tinta: #0b1015;
+  --papel: #f4f1ec;
+  --arcilla: #c86d51;
+  --arcilla-clara: #e0917a;
+}
+
+html { background: var(--tinta); }
+body {
+  margin: 0;
+  background: var(--tinta);
+  color: var(--papel);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection { background: var(--arcilla); color: #fff; }
+
+.etiqueta {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* panel de vidrio: solo para la información que flota sobre la escena */
+.vidrio {
+  background: rgba(11, 16, 21, 0.58);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.55);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .vidrio { background: rgba(11, 16, 21, 0.86); }
+}
+
+.ficha {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  height: 2rem;
+  padding: 0 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 3px;
+  color: rgba(244, 241, 236, 0.86);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.ficha:hover { border-color: #fff; }
+.ficha[aria-pressed='true'] { background: var(--papel); color: var(--tinta); border-color: var(--papel); }
+.ficha:focus-visible { outline: 2px solid var(--arcilla-clara); outline-offset: 2px; }
+
+@keyframes subir { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.subir { opacity: 0; animation: subir 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.entra { animation: subir 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes flecha { 0%, 100% { transform: translateY(0); opacity: 0.6; } 50% { transform: translateY(7px); opacity: 1; } }
+.flecha { animation: flecha 2.2s ease-in-out infinite; }
+
+@keyframes trazo { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.trazo { transform-origin: left; animation: trazo 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both; }
+
+/* tarjetas de hallazgos / cierre */
+.regla { border-top: 1px solid rgba(22, 24, 29, 0.22); }
+
+@media (prefers-reduced-motion: reduce) {
+  .subir, .entra, .trazo { animation: none; opacity: 1; transform: none; }
+  .flecha { animation: none; }
+}
+
+/* barra de lectura */
+.progreso { transform-origin: left; transform: scaleX(var(--p, 0)); }
+@supports ((animation-timeline: scroll(root))) {
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes crece { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .progreso-nativo { animation: crece linear both; animation-timeline: scroll(root); }
+  }
+}

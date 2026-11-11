@@ -1,0 +1,869 @@
+import * as THREE from 'three';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { BASE, prepararEspecies, instanciarArboles } from './arboles.js';
+import { rampa, percentil } from './paleta.js';
+
+// =============================================================================
+// Escena 3D única de la presentación (Tierra Bomba).
+//  - foto satelital z15 + relieve Terrarium + silueta oficial de la isla
+//  - erosión: retroceso uniforme de la costa a la tasa máxima registrada (1,8 m/año), calculado con
+//    transformada de distancia sobre la silueta; el avance se dibuja en un shader (continuo, sin recalcular texturas)
+//  - 2.600 construcciones del archivo de tesis (alturas de referencia, no medidas)
+//  - árboles reales (copas detectadas en la foto + modelos escaneados)
+//  - vías OSM en 3D coloreadas con los resultados de sintaxis espacial (sintaxis.json)
+// =============================================================================
+
+export const TASA = 1.8; // m/año
+const MOSAICO = { x0: 9502, y0: 15426, nx: 10, ny: 17 };
+const VENTANA = { left: 231, top: 1734, w: 1445, h: 2578 };
+const EXAG = 2.6;
+const DEM = { z: 12, x0: 1187, y0: 1929 };
+const CASA_ESCALA = 2.6;
+
+const loadImg = (src) =>
+  new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error(`No se pudo cargar ${src}`));
+    im.src = src;
+  });
+const smooth = (a, b, x) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+const DT_MAX = Number(new URLSearchParams(window.location.search).get('dt')) || 0.05; // ?dt=0.4 acelera el reloj en equipos lentos (pruebas)
+
+// Transformada de distancia euclidiana (Felzenszwalb): distancia² al píxel de mar más cercano
+function edt(width, height, land) {
+  const INF = 1e12;
+  const f = new Float32Array(width * height);
+  for (let i = 0; i < f.length; i++) f[i] = land[i] ? INF : 0;
+  const n = Math.max(width, height);
+  const d = new Float32Array(n);
+  const v = new Int32Array(n);
+  const z = new Float32Array(n + 1);
+  const line = new Float32Array(n);
+  const pass = (len, get, set) => {
+    for (let i = 0; i < len; i++) line[i] = get(i);
+    let k = 0;
+    v[0] = 0;
+    z[0] = -INF;
+    z[1] = INF;
+    for (let q = 1; q < len; q++) {
+      let s = (line[q] + q * q - (line[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      while (s <= z[k]) {
+        k--;
+        s = (line[q] + q * q - (line[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      }
+      k++;
+      v[k] = q;
+      z[k] = s;
+      z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < len; q++) {
+      while (z[k + 1] < q) k++;
+      d[q] = (q - v[k]) * (q - v[k]) + line[v[k]];
+    }
+    for (let i = 0; i < len; i++) set(i, d[i]);
+  };
+  for (let x = 0; x < width; x++) pass(height, (y) => f[y * width + x], (y, val) => { f[y * width + x] = val; });
+  for (let y = 0; y < height; y++) pass(width, (x) => f[y * width + x], (x, val) => { f[y * width + x] = val; });
+  return f;
+}
+
+// Shader: la tierra que se pierde (rojo por tramos de década), frente de erosión y "cómo quedaría"
+function parchearTerreno(mat, U) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uLost = U.uLost;
+    sh.uniforms.uYear = U.uYear;
+    sh.uniforms.uMode = U.uMode;
+    sh.uniforms.uDim = U.uDim;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aWin;\nvarying vec2 vWin;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uLost;\nuniform float uYear;\nuniform float uMode;\nuniform float uDim;\nvarying vec2 vWin;')
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        vec4 lt = texture2D(uLost, vWin);
+        float lostAt = lt.r * 63.75;
+        if (lt.g < 0.5) discard;
+        bool gone = uYear > 0.001 && lostAt <= uYear;
+        if (gone && uMode > 0.5) discard;
+        diffuseColor.rgb *= mix(1.0, 0.30, uDim);
+        if (gone) {
+          vec3 band = lostAt <= 10.0 ? vec3(0.60, 0.09, 0.09) : (lostAt <= 20.0 ? vec3(0.86, 0.15, 0.15) : vec3(0.98, 0.45, 0.42));
+          diffuseColor.rgb = mix(diffuseColor.rgb, band, 0.84);
+        }
+        float front = smoothstep(0.8, 0.0, abs(lostAt - uYear)) * step(0.001, uYear) * (1.0 - uMode);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.66, 0.34), front * 0.9);`
+      );
+  };
+  mat.customProgramCacheKey = () => 'erosion-v1';
+}
+
+const COLOR_TIPO = {
+  residential: '#f4f1ec', unclassified: '#f4f1ec', service: '#9fd3e0', track: '#9fd3e0',
+  path: '#e0917a', footway: '#e0917a', steps: '#e0917a', pedestrian: '#e0917a',
+};
+export const GRUPOS_TIPO = [
+  { id: 'calles', nombre: 'Calles y caminos', color: '#f4f1ec', tipos: ['residential', 'unclassified'] },
+  { id: 'servicio', nombre: 'Servicio y trochas', color: '#9fd3e0', tipos: ['service', 'track'] },
+  { id: 'senderos', nombre: 'Senderos y peatonales', color: '#e0917a', tipos: ['path', 'footway', 'steps', 'pedestrian'] },
+];
+
+export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
+  const small = window.innerWidth < 768;
+
+  // ---------- renderer ----------
+  const renderer = new THREE.WebGLRenderer({ antialias: !small, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, small ? 1.5 : 1.75));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  const el = renderer.domElement;
+  el.style.cssText = 'display:block;width:100%;height:100%;opacity:0;transition:opacity 1.4s ease';
+  mount.appendChild(el);
+
+  const cleanups = [() => { renderer.dispose(); if (el.parentNode === mount) mount.removeChild(el); }];
+  let disposed = false;
+
+  // ---------- carga de datos ----------
+  const TOTAL = 13;
+  let hechas = 0;
+  const track = (p) => p.then((r) => { hechas++; onProgreso(0.6 * (hechas / TOTAL), 'Descargando la isla'); return r; });
+  const jsonOf = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u); return r.json(); });
+  const gunzipJSON = async (u) => {
+    const buf = await (await fetch(u)).arrayBuffer();
+    const u8 = new Uint8Array(buf);
+    if (u8[0] === 0x1f && u8[1] === 0x8b) {
+      const stream = new Response(buf).body.pipeThrough(new DecompressionStream('gzip'));
+      return JSON.parse(await new Response(stream).text());
+    }
+    return JSON.parse(new TextDecoder().decode(u8));
+  };
+
+  const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, ...demImgs] = await Promise.all([
+    track(loadImg(`${BASE}assets/texturas/sat_base.jpg`)),
+    track(loadImg(`${BASE}datos/isla_mascara.png`)),
+    track(loadImg(`${BASE}assets/texturas/tierrabomba_satelite.jpg`)),
+    track(jsonOf(`${BASE}assets/data/georef.json`)),
+    track(jsonOf(`${BASE}assets/data/vegetacion.json`)),
+    track(gunzipJSON(`${BASE}datos/construcciones_tierra_bomba.json.gz`)),
+    track(jsonOf(`${BASE}datos/sintaxis.json`)),
+    track(loadImg(`${BASE}datos/water_normals_fine.jpg`)),
+    track(loadImg(`${BASE}datos/elevacion/1187_1929.png`)),
+    track(loadImg(`${BASE}datos/elevacion/1188_1929.png`)),
+    track(loadImg(`${BASE}datos/elevacion/1187_1930.png`)),
+    track(loadImg(`${BASE}datos/elevacion/1188_1930.png`)),
+  ]);
+  if (disposed) return null;
+  const tick0 = () => new Promise((r) => setTimeout(r, 0));
+
+  // ---------- geometría del mosaico ----------
+  const tx0 = MOSAICO.x0 + VENTANA.left / 256;
+  const tx1 = MOSAICO.x0 + (VENTANA.left + VENTANA.w) / 256;
+  const ty0 = MOSAICO.y0 + VENTANA.top / 256;
+  const ty1 = MOSAICO.y0 + (VENTANA.top + VENTANA.h) / 256;
+  const n15 = 2 ** 15;
+  const latOf = (ty) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / n15))) * 180) / Math.PI;
+  const mpt = (40075016.686 * Math.cos((latOf((ty0 + ty1) / 2) * Math.PI) / 180)) / n15; // metros por tesela z15
+  const mpp = mpt / 256;
+  const txc = (tx0 + tx1) / 2;
+  const tyc = (ty0 + ty1) / 2;
+  const toXZ = (tx, ty) => [(tx - txc) * mpt, (ty - tyc) * mpt];
+  const lonLatToTile = (lon, lat) => [
+    ((lon + 180) / 360) * n15,
+    ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * n15,
+  ];
+  const llToXZ = (lon, lat) => { const [tx, ty] = lonLatToTile(lon, lat); return toXZ(tx, ty); };
+
+  // ---------- silueta de la isla y distancia al mar ----------
+  onProgreso(0.62, 'Calculando la costa');
+  await tick0();
+  const W = VENTANA.w;
+  const H = VENTANA.h;
+  const maskC = document.createElement('canvas');
+  maskC.width = W;
+  maskC.height = H;
+  const mctx = maskC.getContext('2d', { willReadFrequently: true });
+  mctx.drawImage(maskImg, 0, 0);
+  const mdata = mctx.getImageData(0, 0, W, H).data;
+  const land = new Uint8Array(W * H);
+  const maskAlpha = new Uint8Array(W * H);
+  let landPx = 0;
+  for (let i = 0; i < W * H; i++) {
+    const val = mdata[i * 4 + 3] < 255 ? mdata[i * 4 + 3] : mdata[i * 4];
+    maskAlpha[i] = val;
+    if (val > 127) { land[i] = 1; landPx++; }
+  }
+  const sq = edt(W, H, land);
+  const distM = new Float32Array(W * H);
+  for (let i = 0; i < distM.length; i++) distM[i] = land[i] ? Math.sqrt(sq[i]) * mpp : 0;
+  if (disposed) return null;
+
+  // textura de pérdida: R = año en que la costa llega (×4, hasta 63,75), G = silueta
+  const lostData = new Uint8Array(W * H * 4);
+  for (let i = 0; i < W * H; i++) {
+    lostData[i * 4] = land[i] ? Math.min(255, Math.round((distM[i] / TASA) * 4)) : 0;
+    lostData[i * 4 + 1] = maskAlpha[i];
+    lostData[i * 4 + 3] = 255;
+  }
+  const lostTex = new THREE.DataTexture(lostData, W, H, THREE.RGBAFormat);
+  lostTex.minFilter = lostTex.magFilter = THREE.LinearFilter;
+  lostTex.generateMipmaps = false;
+  lostTex.needsUpdate = true;
+
+  const lostByYear = new Float64Array(31);
+  for (let i = 0; i < distM.length; i++) {
+    if (!land[i]) continue;
+    const yv = distM[i] / TASA;
+    if (yv < 30) lostByYear[Math.floor(yv) + 1] += 1;
+  }
+  const cumLostPx = new Float64Array(31);
+  for (let k = 1; k <= 30; k++) cumLostPx[k] = cumLostPx[k - 1] + lostByYear[k];
+  const ha = (px) => (px * mpp * mpp) / 10000;
+
+  const distAt = (X, Z) => {
+    const fx = ((X / mpt + txc - tx0) / (tx1 - tx0)) * W - 0.5;
+    const fy = ((Z / mpt + tyc - ty0) / (ty1 - ty0)) * H - 0.5;
+    if (fx < 0 || fy < 0 || fx > W - 1.001 || fy > H - 1.001) return -1;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const ax = fx - x0;
+    const ay = fy - y0;
+    const i = y0 * W + x0;
+    return distM[i] * (1 - ax) * (1 - ay) + distM[i + 1] * ax * (1 - ay) + distM[i + W] * (1 - ax) * ay + distM[i + W + 1] * ax * ay;
+  };
+  const lostAtXZ = (X, Z) => { const d = distAt(X, Z); return d < 0 ? Infinity : d / TASA; };
+
+  // ---------- relieve ----------
+  onProgreso(0.7, 'Levantando el relieve');
+  await tick0();
+  const SM = 4;
+  const smallC = document.createElement('canvas');
+  smallC.width = Math.round(W / SM);
+  smallC.height = Math.round(H / SM);
+  const sctx = smallC.getContext('2d', { willReadFrequently: true });
+  sctx.filter = 'blur(2px)';
+  sctx.drawImage(maskC, 0, 0, smallC.width, smallC.height);
+  const sdata = sctx.getImageData(0, 0, smallC.width, smallC.height).data;
+  const smallMask = (u, v) => {
+    const x = Math.max(0, Math.min(smallC.width - 1, Math.floor(u * smallC.width)));
+    const y = Math.max(0, Math.min(smallC.height - 1, Math.floor(v * smallC.height)));
+    const i = (y * smallC.width + x) * 4;
+    return (sdata[i + 3] < 255 ? sdata[i + 3] : sdata[i]) / 255;
+  };
+  const demC = document.createElement('canvas');
+  demC.width = demC.height = 512;
+  const dctx = demC.getContext('2d', { willReadFrequently: true });
+  dctx.drawImage(demImgs[0], 0, 0);
+  dctx.drawImage(demImgs[1], 256, 0);
+  dctx.drawImage(demImgs[2], 0, 256);
+  dctx.drawImage(demImgs[3], 256, 256);
+  const ddata = dctx.getImageData(0, 0, 512, 512).data;
+  const demPx = (x, y) => {
+    x = Math.max(0, Math.min(511, x));
+    y = Math.max(0, Math.min(511, y));
+    const i = (y * 512 + x) * 4;
+    return ddata[i] * 256 + ddata[i + 1] + ddata[i + 2] / 256 - 32768;
+  };
+  const demAtTile = (tx, ty) => {
+    const fx = (tx / 8 - DEM.x0) * 256 - 0.5;
+    const fy = (ty / 8 - DEM.y0) * 256 - 0.5;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const ax = fx - x0;
+    const ay = fy - y0;
+    return demPx(x0, y0) * (1 - ax) * (1 - ay) + demPx(x0 + 1, y0) * ax * (1 - ay) + demPx(x0, y0 + 1) * (1 - ax) * ay + demPx(x0 + 1, y0 + 1) * ax * ay;
+  };
+
+  const NX = small ? 130 : 180;
+  const NY = Math.round((NX * H) / W);
+  const pos = new Float32Array((NX + 1) * (NY + 1) * 3);
+  const uvSat = new Float32Array((NX + 1) * (NY + 1) * 2);
+  const winUV = new Float32Array((NX + 1) * (NY + 1) * 2);
+  const heights = new Float32Array((NX + 1) * (NY + 1));
+  {
+    let p = 0;
+    let q = 0;
+    for (let j = 0; j <= NY; j++) {
+      for (let i = 0; i <= NX; i++) {
+        const u = i / NX;
+        const v = j / NY;
+        const tx = tx0 + u * (tx1 - tx0);
+        const ty = ty0 + v * (ty1 - ty0);
+        const [X, Z] = toXZ(tx, ty);
+        const landW = smooth(0.3, 0.85, smallMask(u, v));
+        const h = Math.max(0, demAtTile(tx, ty)) * EXAG * landW + 0.3 * landW;
+        heights[j * (NX + 1) + i] = h;
+        pos[p++] = X; pos[p++] = h; pos[p++] = Z;
+        uvSat[q] = (tx - MOSAICO.x0) / MOSAICO.nx;
+        uvSat[q + 1] = 1 - (ty - MOSAICO.y0) / MOSAICO.ny;
+        winUV[q] = u;
+        winUV[q + 1] = v;
+        q += 2;
+      }
+    }
+  }
+  const idx = [];
+  for (let j = 0; j < NY; j++) {
+    for (let i = 0; i < NX; i++) {
+      const a = j * (NX + 1) + i;
+      idx.push(a, a + NX + 1, a + 1, a + 1, a + NX + 1, a + NX + 2);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvSat, 2));
+  geo.setAttribute('aWin', new THREE.BufferAttribute(winUV, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const heightAtUV = (u, v) => {
+    const fi = Math.max(0, Math.min(NX - 1e-3, u * NX));
+    const fj = Math.max(0, Math.min(NY - 1e-3, v * NY));
+    const i = Math.floor(fi);
+    const j = Math.floor(fj);
+    const ax = fi - i;
+    const ay = fj - j;
+    const Hh = (a, b) => heights[b * (NX + 1) + a];
+    return Hh(i, j) * (1 - ax) * (1 - ay) + Hh(i + 1, j) * ax * (1 - ay) + Hh(i, j + 1) * (1 - ax) * ay + Hh(i + 1, j + 1) * ax * ay;
+  };
+  const heightAtXZ = (X, Z) => heightAtUV(clamp01((X / mpt + txc - tx0) / (tx1 - tx0)), clamp01((Z / mpt + tyc - ty0) / (ty1 - ty0)));
+
+  const maxTex = renderer.capabilities.maxTextureSize;
+  const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const textureFrom = (img, maxSide) => {
+    const sc = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * sc);
+    c.height = Math.round(img.height * sc);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = aniso;
+    return t;
+  };
+  const U = {
+    uLost: { value: lostTex }, uYear: { value: 0 }, uMode: { value: 0 }, uDim: { value: 0 },
+  };
+  const terrainMat = new THREE.MeshStandardMaterial({ map: textureFrom(satImg, maxTex), roughness: 1, metalness: 0 });
+  parchearTerreno(terrainMat, U);
+  const terrain = new THREE.Mesh(geo, terrainMat);
+
+  // ---------- detalle del casco urbano (foto z18) ----------
+  const PM = geoRef.mosaico;
+  const tile18 = PM.px / 256;
+  const NP = small ? 100 : 150;
+  const ppos = new Float32Array((NP + 1) * (NP + 1) * 3);
+  const puv = new Float32Array((NP + 1) * (NP + 1) * 2);
+  const pwin = new Float32Array((NP + 1) * (NP + 1) * 2);
+  {
+    let a = 0;
+    let b = 0;
+    for (let j = 0; j <= NP; j++) {
+      for (let i = 0; i <= NP; i++) {
+        const tx = (PM.x0 + (i / NP) * tile18) / 8;
+        const ty = (PM.y0 + (j / NP) * tile18) / 8;
+        const [X, Z] = toXZ(tx, ty);
+        const u = (tx - tx0) / (tx1 - tx0);
+        const v = (ty - ty0) / (ty1 - ty0);
+        ppos[a++] = X;
+        ppos[a++] = heightAtUV(clamp01(u), clamp01(v)) + 0.4;
+        ppos[a++] = Z;
+        puv[b] = i / NP; puv[b + 1] = 1 - j / NP;
+        pwin[b] = u; pwin[b + 1] = v;
+        b += 2;
+      }
+    }
+  }
+  const pidx = [];
+  for (let j = 0; j < NP; j++) {
+    for (let i = 0; i < NP; i++) {
+      const a = j * (NP + 1) + i;
+      pidx.push(a, a + NP + 1, a + 1, a + 1, a + NP + 1, a + NP + 2);
+    }
+  }
+  const pgeo = new THREE.BufferGeometry();
+  pgeo.setAttribute('position', new THREE.BufferAttribute(ppos, 3));
+  pgeo.setAttribute('uv', new THREE.BufferAttribute(puv, 2));
+  pgeo.setAttribute('aWin', new THREE.BufferAttribute(pwin, 2));
+  pgeo.setIndex(pidx);
+  pgeo.computeVertexNormals();
+  const patchMat = new THREE.MeshStandardMaterial({ map: textureFrom(patchImg, maxTex), roughness: 1, metalness: 0 });
+  parchearTerreno(patchMat, U);
+  const patch = new THREE.Mesh(pgeo, patchMat);
+
+  // ---------- punto de referencia: casco urbano ----------
+  const cr = Math.cos(geoRef.rot);
+  const sr = Math.sin(geoRef.rot);
+  const modelToLL = (x, y) => {
+    const px = (x - geoRef.tx) / geoRef.sc;
+    const py = (y - geoRef.ty) / geoRef.sc;
+    return [geoRef.lon0 + (px * cr + py * sr) / geoRef.kx, geoRef.lat0 + (-px * sr + py * cr) / geoRef.ky];
+  };
+  const [vlon, vlat] = modelToLL(40, 390);
+  const [vx, vz] = llToXZ(vlon, vlat);
+
+  // ---------- árboles reales ----------
+  onProgreso(0.78, 'Colocando los árboles reales');
+  await tick0();
+  const especies = await prepararEspecies();
+  if (disposed) return null;
+  const treeAll = veg.arboles.map(([x, y, size, dense], i) => {
+    const [lo, la] = modelToLL(x, y);
+    const [X, Z] = llToXZ(lo, la);
+    const d = distAt(X, Z);
+    return { X, Z, i, size, dense, d, lostAt: d < 0 ? -1 : d / TASA, dc: Math.hypot(X - vx, Z - vz) };
+  }).filter((t) => t.d > 0)
+    .sort((a, b) => a.dc - b.dc)
+    .slice(0, small ? 700 : 1800)
+    .map((t) => ({
+      x: t.X, y: heightAtXZ(t.X, t.Z) + 0.4, z: t.Z,
+      rot: ((Math.imul(t.i + 7, 40503) >>> 0) % 628) / 100,
+      height: 8.5 * t.size * 1.35 * (t.dense ? 0.92 : 1.05),
+      tone: ((Math.imul(t.i + 3, 69069) >>> 0) % 100) / 100,
+      lostAt: t.lostAt,
+    }));
+  let treesGroup = instanciarArboles(especies, treeAll, 60);
+  let treesYear = -1;
+
+  // ---------- construcciones ----------
+  onProgreso(0.84, 'Colocando las construcciones');
+  await tick0();
+  const houses = [];
+  for (const [, refH, ring] of construcciones.buildings) {
+    let cx = 0;
+    let cy = 0;
+    const pts = ring.map(([lon, lat]) => { const [X, Z] = llToXZ(lon, lat); cx += X; cy += Z; return [X, Z]; });
+    cx /= pts.length;
+    cy /= pts.length;
+    let sxx = 0; let szz = 0; let sxz = 0;
+    for (const [X, Z] of pts) { sxx += (X - cx) ** 2; szz += (Z - cy) ** 2; sxz += (X - cx) * (Z - cy); }
+    const ang = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    let minA = 1e9; let maxA = -1e9; let minB = 1e9; let maxB = -1e9;
+    for (const [X, Z] of pts) {
+      const a = (X - cx) * ca + (Z - cy) * sa;
+      const b = -(X - cx) * sa + (Z - cy) * ca;
+      minA = Math.min(minA, a); maxA = Math.max(maxA, a); minB = Math.min(minB, b); maxB = Math.max(maxB, b);
+    }
+    const dm = distAt(cx, cy);
+    if (dm < 0) continue;
+    houses.push({ x: cx, z: cy, ang, w: Math.max(3, maxA - minA), d: Math.max(3, maxB - minB), h: refH || 4, y: heightAtXZ(cx, cy), lostAt: dm / TASA });
+  }
+  const houseGeo = new THREE.BoxGeometry(1, 1, 1);
+  houseGeo.translate(0, 0.5, 0);
+  const houseMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, transparent: true, opacity: 1 });
+  const houseMesh = new THREE.InstancedMesh(houseGeo, houseMat, houses.length);
+  houseMesh.frustumCulled = false;
+  const m4 = new THREE.Matrix4();
+  const qn = new THREE.Quaternion();
+  const upV = new THREE.Vector3(0, 1, 0);
+  const sv = new THREE.Vector3();
+  const pv = new THREE.Vector3();
+  const roof = new THREE.Color();
+  const RED = new THREE.Color(0xff2a2a);
+  const updateHouses = (yr, modo, escala) => {
+    houses.forEach((hh, k) => {
+      const lost = yr > 0.001 && hh.lostAt <= yr;
+      const hide = lost && modo === 'despues';
+      qn.setFromAxisAngle(upV, -hh.ang);
+      pv.set(hh.x, hh.y, hh.z);
+      const s = hide ? 0.0001 : escala;
+      sv.set(hh.w * s, hh.h * s, hh.d * s);
+      m4.compose(pv, qn, sv);
+      houseMesh.setMatrixAt(k, m4);
+      if (lost) roof.copy(RED);
+      else roof.setHSL(0.09, 0.08 + ((k * 37) % 10) / 100, 0.78 + ((k * 53) % 10) / 100);
+      houseMesh.setColorAt(k, roof);
+    });
+    houseMesh.instanceMatrix.needsUpdate = true;
+    if (houseMesh.instanceColor) houseMesh.instanceColor.needsUpdate = true;
+  };
+  updateHouses(0, 'perdida', CASA_ESCALA);
+
+  // ---------- escena, cielo, mar, luces ----------
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x9fc6d4, 0.000011);
+  scene.add(terrain, patch, houseMesh, treesGroup);
+  const sky = new Sky();
+  sky.scale.setScalar(450000);
+  const su = sky.material.uniforms;
+  su.turbidity.value = 2;
+  su.rayleigh.value = 2.4;
+  su.mieCoefficient.value = 0.004;
+  su.mieDirectionalG.value = 0.82;
+  const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 38), THREE.MathUtils.degToRad(215));
+  su.sunPosition.value.copy(sunDir);
+  scene.add(sky);
+
+  const normals = new THREE.Texture(normalsImg);
+  normals.wrapS = normals.wrapT = THREE.RepeatWrapping;
+  normals.repeat.set(900, 900);
+  normals.needsUpdate = true;
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(200000, 200000),
+    new THREE.MeshStandardMaterial({ color: 0x0a4f80, roughness: 0.62, metalness: 0, normalMap: normals, normalScale: new THREE.Vector2(0.35, 0.35) })
+  );
+  water.rotation.x = -Math.PI / 2;
+  scene.add(water);
+  const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
+  sun.position.copy(sunDir).multiplyScalar(8000);
+  scene.add(sun, new THREE.HemisphereLight(0xcfe6ff, 0x6b5d3a, 0.7));
+
+  const camera = new THREE.PerspectiveCamera(42, 1, 5, 400000);
+
+  // ---------- vías 3D ----------
+  onProgreso(0.9, 'Dibujando las vías');
+  await tick0();
+  const redes = {};
+  const matHalo = () => new LineMaterial({ color: 0x05080c, linewidth: 6, transparent: true, opacity: 0, depthWrite: false });
+  const matMain = () => new LineMaterial({ linewidth: 3, vertexColors: true, transparent: true, opacity: 0, depthWrite: false });
+  const lineMats = [];
+  for (const nombre of ['peatonal', 'motos']) {
+    const d = sintaxis[nombre];
+    const piezas = [];
+    for (let s = 0; s < d.segmentos; s++) {
+      const [lon1, lat1, lon2, lat2] = d.coords[s];
+      const [ax, az] = llToXZ(lon1, lat1);
+      const [bx, bz] = llToXZ(lon2, lat2);
+      const L = Math.hypot(bx - ax, bz - az);
+      const k = Math.max(1, Math.ceil(L / 16));
+      for (let j = 0; j < k; j++) {
+        const x0 = ax + ((bx - ax) * j) / k; const z0 = az + ((bz - az) * j) / k;
+        const x1 = ax + ((bx - ax) * (j + 1)) / k; const z1 = az + ((bz - az) * (j + 1)) / k;
+        const mx = (x0 + x1) / 2; const mz = (z0 + z1) / 2;
+        piezas.push({ s, x0, z0, x1, z1, mx, mz, largo: L / k, orden: Math.hypot(mx - vx, mz - vz), lostAt: lostAtXZ(mx, mz) });
+      }
+    }
+    piezas.sort((a, b) => a.orden - b.orden); // el trazo crece desde el casco urbano hacia afuera
+    const posL = new Float32Array(piezas.length * 6);
+    piezas.forEach((p, i) => {
+      posL[i * 6] = p.x0; posL[i * 6 + 1] = heightAtXZ(p.x0, p.z0) + 3; posL[i * 6 + 2] = p.z0;
+      posL[i * 6 + 3] = p.x1; posL[i * 6 + 4] = heightAtXZ(p.x1, p.z1) + 3; posL[i * 6 + 5] = p.z1;
+    });
+    const g = new LineSegmentsGeometry();
+    g.setPositions(posL);
+    g.setColors(new Float32Array(piezas.length * 6).fill(1));
+    const halo = new LineSegments2(g, matHalo());
+    const main = new LineSegments2(g, matMain());
+    halo.renderOrder = 5; main.renderOrder = 6;
+    halo.frustumCulled = main.frustumCulled = false;
+    halo.visible = main.visible = false;
+    lineMats.push(halo.material, main.material);
+    scene.add(halo, main);
+    const km = d.largo_m.reduce((a, b) => a + b, 0) / 1000;
+    const porTipo = {};
+    d.tipo.forEach((t, i) => { porTipo[t] = (porTipo[t] || 0) + d.largo_m[i] / 1000; });
+    redes[nombre] = { nombre, d, piezas, g, halo, main, op: 0, reveal: 0, firma: '', km, porTipo, N: piezas.length };
+  }
+
+  // riesgo de erosión sobre cada red
+  const riesgoRed = {};
+  for (const [nombre, r] of Object.entries(redes)) {
+    const acc = { 10: 0, 20: 0, 30: 0 };
+    let tot = 0;
+    r.piezas.forEach((p) => { tot += p.largo; for (const y of [10, 20, 30]) if (p.lostAt <= y) acc[y] += p.largo; });
+    // elección: ¿cuántos de los ejes de mayor elección (10 % superior, radio n) caen en la franja?
+    const nach = r.d.medidas.n.nach;
+    const umbral = percentil(nach, 0.9);
+    const segLost = new Float64Array(r.d.segmentos).fill(Infinity);
+    r.piezas.forEach((p) => { if (p.lostAt < segLost[p.s]) segLost[p.s] = p.lostAt; });
+    let altos = 0; const altosLost = { 10: 0, 20: 0, 30: 0 };
+    for (let s = 0; s < r.d.segmentos; s++) {
+      if (nach[s] >= umbral && r.d.comp[s] === r.d.mayor_comp) {
+        altos++;
+        for (const y of [10, 20, 30]) if (segLost[s] <= y) altosLost[y]++;
+      }
+    }
+    riesgoRed[nombre] = {
+      km: tot / 1000,
+      pct: { 10: (100 * acc[10]) / tot, 20: (100 * acc[20]) / tot, 30: (100 * acc[30]) / tot },
+      km_perdidos: { 10: acc[10] / 1000, 20: acc[20] / 1000, 30: acc[30] / 1000 },
+      altos, altosLost,
+    };
+  }
+
+  // ---------- muelles y rutas esquemáticas de lanchas ----------
+  const rutasGroup = new THREE.Group();
+  rutasGroup.visible = false;
+  scene.add(rutasGroup);
+  const rutaMats = [];
+  const rutasPts = [];
+  for (const r of sintaxis.rutas_lanchas) {
+    const arr = [];
+    for (let i = 0; i < r.puntos.length - 1; i++) {
+      const [lon1, lat1] = r.puntos[i];
+      const [lon2, lat2] = r.puntos[i + 1];
+      const [ax, az] = llToXZ(lon1, lat1);
+      const [bx, bz] = llToXZ(lon2, lat2);
+      arr.push(ax, 3, az, bx, 3, bz);
+      rutasPts.push([ax, az]);
+    }
+    const g = new LineSegmentsGeometry();
+    g.setPositions(arr);
+    const m = new LineMaterial({ color: 0x8fd3ee, linewidth: 2.6, transparent: true, opacity: 0, dashed: true, dashSize: 170, gapSize: 130, depthWrite: false });
+    const ln = new LineSegments2(g, m);
+    ln.computeLineDistances();
+    ln.frustumCulled = false;
+    rutasGroup.add(ln);
+    rutaMats.push(m);
+  }
+  const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
+  beamGeo.translate(0, 0.5, 0);
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xffb066, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const beams = [];
+  const addBeam = (X, Z, tipo) => {
+    const m = new THREE.Mesh(beamGeo, beamMat);
+    m.position.set(X, heightAtXZ(X, Z), Z);
+    m.userData.tipo = tipo;
+    m.frustumCulled = false;
+    rutasGroup.add(m);
+    beams.push(m);
+  };
+  const muelles = sintaxis.muelles;
+  muelles.puntos.forEach((p) => { const [X, Z] = llToXZ(p.lon, p.lat); addBeam(X, Z, 'muelle'); });
+  for (const r of sintaxis.rutas_lanchas) {
+    for (const idxp of [0, r.puntos.length - 1]) { const [X, Z] = llToXZ(...r.puntos[idxp]); addBeam(X, Z, 'embarque'); }
+  }
+
+  // ---------- capas de color ----------
+  const colorTmp = new THREE.Color();
+  const gris = new THREE.Color().setRGB(0.30, 0.32, 0.34);
+  function colorearRed(red, capa, radio) {
+    const { d, piezas, g } = red;
+    const out = new Float32Array(piezas.length * 6);
+    let norm = null;
+    const mayor = d.mayor_comp;
+    if (capa === 'nain' || capa === 'nach') {
+      const arr = d.medidas[radio][capa];
+      const lo = percentil(arr, 0.02);
+      const hi = percentil(arr, 0.98);
+      norm = (s) => (d.comp[s] !== mayor ? -1 : clamp01((arr[s] - lo) / (hi - lo || 1)));
+    } else if (capa === 'muelle_dist') {
+      const arr = muelles.dist_m;
+      const hi = percentil(arr.filter((v) => v >= 0), 0.95) || 1;
+      norm = (s) => (arr[s] < 0 ? -1 : 1 - clamp01(arr[s] / hi));
+    } else if (capa === 'muelle_ch') {
+      const arr = muelles.eleccion;
+      norm = (s) => (d.comp[s] !== mayor ? -1 : clamp01(Math.pow(arr[s], 0.45)));
+    }
+    piezas.forEach((p, i) => {
+      if (capa === 'tipo') colorTmp.set(COLOR_TIPO[d.tipo[p.s]] || '#f4f1ec');
+      else if (capa === 'riesgo') {
+        const y = p.lostAt;
+        const hex = y <= 10 ? '#b3261e' : y <= 20 ? '#e0453a' : y <= 30 ? '#f58b7e' : '#aeb8bd';
+        colorTmp.set(hex);
+      } else {
+        const t = norm ? norm(p.s) : 0;
+        if (t < 0) colorTmp.copy(gris);
+        else rampa(t, colorTmp);
+      }
+      out[i * 6] = out[i * 6 + 3] = colorTmp.r;
+      out[i * 6 + 1] = out[i * 6 + 4] = colorTmp.g;
+      out[i * 6 + 2] = out[i * 6 + 5] = colorTmp.b;
+    });
+    g.setColors(out);
+  }
+
+  // ---------- estadísticas globales ----------
+  const casasPerdidas = (y) => houses.reduce((n, hh) => n + (hh.lostAt <= y ? 1 : 0), 0);
+  const stats = {
+    mpp, resolucionM: mpp,
+    ha: { total: ha(landPx), 10: ha(cumLostPx[10]), 20: ha(cumLostPx[20]), 30: ha(cumLostPx[30]) },
+    pct: { 10: (100 * cumLostPx[10]) / landPx, 20: (100 * cumLostPx[20]) / landPx, 30: (100 * cumLostPx[30]) / landPx },
+    casas: { total: houses.length, 10: casasPerdidas(10), 20: casasPerdidas(20), 30: casasPerdidas(30) },
+    haAnio: (y) => ha(cumLostPx[Math.max(0, Math.min(30, Math.round(y)))]),
+    pctAnio: (y) => (100 * cumLostPx[Math.max(0, Math.min(30, Math.round(y)))]) / landPx,
+    casasAnio: (y) => casasPerdidas(y),
+    riesgoRed,
+    km: { peatonal: redes.peatonal.km, motos: redes.motos.km },
+    porTipo: { peatonal: redes.peatonal.porTipo, motos: redes.motos.porTipo },
+  };
+
+  // ---------- poses de cámara ----------
+  const bb = new THREE.Box3();
+  rutasPts.forEach(([x, z]) => bb.expandByPoint(new THREE.Vector3(x, 0, z)));
+  muelles.puntos.forEach((p) => { const [x, z] = llToXZ(p.lon, p.lat); bb.expandByPoint(new THREE.Vector3(x, 0, z)); });
+  const bc = bb.getCenter(new THREE.Vector3());
+  const bs = bb.getSize(new THREE.Vector3());
+  const bdist = Math.max(bs.x, bs.z) * 1.05 + 2500;
+  const dx = () => (window.innerWidth >= 1024 ? -1500 : 0); // en pantallas anchas la isla se corre a la derecha del panel
+  const POSES = {
+    hero: (t) => {
+      const a = THREE.MathUtils.degToRad(205) + Math.sin(t * 0.05) * 0.55;
+      return { pos: new THREE.Vector3(vx + Math.sin(a) * 470, 170, vz + Math.cos(a) * 470), look: new THREE.Vector3(vx, -6, vz) };
+    },
+    casco: () => ({ pos: new THREE.Vector3(vx + 380, 520, vz + 700), look: new THREE.Vector3(vx, 10, vz) }),
+    isla: () => ({ pos: new THREE.Vector3(500 + dx(), 7800, 8400), look: new THREE.Vector3(dx(), 0, 300) }),
+    problema: () => (window.innerWidth >= 1024
+      ? { pos: new THREE.Vector3(-900, 7400, 8000), look: new THREE.Vector3(-2300, 0, 300) }
+      : { pos: new THREE.Vector3(500, 7800, 8400), look: new THREE.Vector3(0, 0, 300) }),
+    vias: () => ({ pos: new THREE.Vector3(250 + dx(), 5700, 6700), look: new THREE.Vector3(dx(), 0, 250) }),
+    lancha: () => ({ pos: new THREE.Vector3(bc.x + bdist * 0.18 + dx() * 1.5, bdist * 0.62, bc.z + bdist * 0.92), look: new THREE.Vector3(bc.x + dx() * 1.5, 0, bc.z) }),
+    casco_alto: () => ({ pos: new THREE.Vector3(vx + 250, 1500, vz + 1500), look: new THREE.Vector3(vx, 0, vz) }),
+  };
+
+  // ---------- estado objetivo y bucle ----------
+  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0 };
+  const cur = { year: 0, dim: 0, casas: 1, rutas: 0, escala: CASA_ESCALA };
+  const camPos = POSES.hero(0).pos.clone();
+  const camLook = POSES.hero(0).look.clone();
+  const mouse = { x: 0, y: 0, sx: 0, sy: 0 };
+  const onMove = (e) => { mouse.x = (e.clientX / window.innerWidth - 0.5) * 2; mouse.y = (e.clientY / window.innerHeight - 0.5) * 2; };
+  window.addEventListener('pointermove', onMove, { passive: true });
+  cleanups.push(() => window.removeEventListener('pointermove', onMove));
+
+  const resize = () => {
+    const w = mount.clientWidth || window.innerWidth;
+    const h = mount.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    lineMats.forEach((m) => m.resolution.set(w, h));
+    rutaMats.forEach((m) => m.resolution.set(w, h));
+  };
+  resize();
+  const ro = new ResizeObserver(resize);
+  ro.observe(mount);
+  cleanups.push(() => ro.disconnect());
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let last = performance.now();
+  const t0 = last;
+  let raf = 0;
+  let pausado = document.hidden;
+  const onVis = () => { pausado = document.hidden; last = performance.now(); };
+  document.addEventListener('visibilitychange', onVis);
+  cleanups.push(() => document.removeEventListener('visibilitychange', onVis));
+
+  let houseKey = '';
+  let shown = false;
+  const expo = (dt, k) => 1 - Math.exp(-dt * k);
+
+  const tick = (now) => {
+    raf = requestAnimationFrame(tick);
+    if (pausado || disposed) return;
+    const dt = Math.min(DT_MAX, (now - last) / 1000);
+    last = now;
+    const t = (now - t0) / 1000;
+
+    // erosión
+    cur.year += (T.year - cur.year) * expo(dt, reduce ? 30 : 5);
+    if (Math.abs(T.year - cur.year) < 0.002) cur.year = T.year;
+    U.uYear.value = cur.year;
+    U.uMode.value = T.modo === 'despues' ? 1 : 0;
+    cur.dim += (T.dim - cur.dim) * expo(dt, 3);
+    U.uDim.value = cur.dim;
+
+    // cámara
+    const pose = POSES[T.cam](t * (reduce ? 0 : 1));
+    // en pantallas verticales la isla se aleja y sube, para no quedar bajo el panel inferior
+    const aspect = window.innerWidth / window.innerHeight;
+    if (aspect < 0.85 && T.cam !== 'hero' && T.cam !== 'casco') {
+      const k = Math.min(2.3, 0.95 / aspect);
+      const dirV = pose.pos.clone().sub(pose.look).multiplyScalar(k);
+      const subir = dirV.length() * 0.2;
+      pose.look.z += subir;
+      pose.pos = pose.look.clone().add(dirV);
+    }
+    const kc = expo(dt, reduce ? 30 : 1.7);
+    camPos.lerp(pose.pos, kc);
+    camLook.lerp(pose.look, kc);
+    mouse.sx += (mouse.x - mouse.sx) * 0.05;
+    mouse.sy += (mouse.y - mouse.sy) * 0.05;
+    const dist = camPos.distanceTo(camLook);
+    camera.position.set(camPos.x + mouse.sx * dist * 0.012, camPos.y - mouse.sy * dist * 0.008, camPos.z);
+    camera.lookAt(camLook);
+
+    // casas
+    cur.casas += (T.casas - cur.casas) * expo(dt, 3);
+    houseMat.opacity = cur.casas;
+    houseMesh.visible = cur.casas > 0.02;
+    const want = THREE.MathUtils.clamp(dist / 3800, 1, CASA_ESCALA);
+    if (Math.abs(want - cur.escala) / cur.escala > 0.05) cur.escala = want;
+    const yk = Math.round(cur.year * 2) / 2;
+    const key = `${yk}|${T.modo}|${cur.escala.toFixed(2)}`;
+    if (houseMesh.visible && key !== houseKey) { houseKey = key; updateHouses(yk, T.modo, cur.escala); }
+
+    // árboles
+    treesGroup.visible = dist < 3500 && cur.casas > 0.5;
+    if (T.modo === 'despues' && treesGroup.visible && Math.round(cur.year) !== treesYear) {
+      treesYear = Math.round(cur.year);
+      scene.remove(treesGroup);
+      treesGroup.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
+      treesGroup = instanciarArboles(especies, treeAll.filter((tr) => tr.lostAt > cur.year), 60);
+      scene.add(treesGroup);
+    } else if (T.modo !== 'despues' && treesYear !== -1) {
+      treesYear = -1;
+      scene.remove(treesGroup);
+      treesGroup.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
+      treesGroup = instanciarArboles(especies, treeAll, 60);
+      scene.add(treesGroup);
+    }
+
+    // vías
+    const uw = clamp01((dist - 900) / 6000);
+    for (const [nombre, r] of Object.entries(redes)) {
+      const firma = `${T.capa}|${T.radio}`;
+      const activa = T.red === nombre && T.calles > 0;
+      if (activa && r.firma !== firma) {
+        r.firma = firma;
+        colorearRed(r, T.capa, T.radio);
+        r.reveal = reduce ? 1 : 0;
+      }
+      const objetivo = activa ? T.calles : 0;
+      r.op += (objetivo - r.op) * expo(dt, 4);
+      if (activa) r.reveal = Math.min(1, r.reveal + dt * 0.7);
+      const vis = r.op > 0.01;
+      r.halo.visible = r.main.visible = vis;
+      if (vis) {
+        r.g.instanceCount = Math.max(1, Math.floor(r.N * r.reveal));
+        r.main.material.opacity = r.op;
+        r.halo.material.opacity = r.op * 0.55;
+        r.main.material.linewidth = THREE.MathUtils.lerp(3.8, 2.3, uw) * (small ? 0.85 : 1);
+        r.halo.material.linewidth = THREE.MathUtils.lerp(7.2, 4.6, uw) * (small ? 0.85 : 1);
+      }
+    }
+
+    // muelles y rutas
+    cur.rutas += (T.rutas - cur.rutas) * expo(dt, 3);
+    rutasGroup.visible = cur.rutas > 0.01;
+    if (rutasGroup.visible) {
+      rutaMats.forEach((m) => { m.opacity = cur.rutas * 0.9; });
+      beamMat.opacity = cur.rutas * 0.8;
+      const h = THREE.MathUtils.clamp(dist * 0.05, 45, 700);
+      beams.forEach((b) => { const k = b.userData.tipo === 'embarque' ? 1.5 : 1; b.scale.set(h * 0.011 * k, h * k, h * 0.011 * k); });
+    }
+
+    renderer.render(scene, camera);
+    if (!shown) {
+      shown = true;
+      el.style.opacity = '1';
+    }
+  };
+  raf = requestAnimationFrame(tick);
+  cleanups.push(() => cancelAnimationFrame(raf));
+  onProgreso(1, 'Listo');
+
+  return {
+    stats,
+    datos: sintaxis,
+    set(parcial) { Object.assign(T, parcial); },
+    estado: T,
+    anioActual: () => cur.year,
+    dispose() {
+      disposed = true;
+      cleanups.forEach((fn) => fn());
+    },
+  };
+}
+

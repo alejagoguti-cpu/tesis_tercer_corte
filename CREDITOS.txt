@@ -10,3 +10,24 @@ IMAGEN SATELITAL  assets/texturas/
 MODELO 3D, VEGETACIÓN Y GEORREFERENCIACIÓN  assets/modelo/, assets/data/
   Tomados del repositorio de la tesis https://github.com/alejagoguti-cpu/tesis
   Árboles: Island Tree 01 y 02 (Poly Haven, CC0).
+
+
+TERCER CORTE (index.html, datos/, codigo/)
+
+VIAS Y MUELLES  datos/sintaxis.json, codigo/fuente/
+  (c) OpenStreetMap contributors, licencia ODbL 1.0. Vias consultadas el 2026-11-03 via API /map; muelles via Overpass API.
+  Cobertura parcial: no es un inventario levantado en campo.
+
+RELIEVE  datos/elevacion/
+  Terrain Tiles (Mapzen / AWS Open Data), codificacion Terrarium. No sustituye un levantamiento topografico.
+
+CONSTRUCCIONES  datos/construcciones_tierra_bomba.json.gz
+  2.600 huellas unicas del archivo de la tesis, recortadas por su mascara insular. Alturas de referencia, no medidas.
+
+SINTAXIS ESPACIAL  codigo/scripts/space_syntax.mjs
+  Reimplementacion propia del analisis angular de segmentos de depthmapX (UCL Space Group, GPL-3.0).
+  No se ejecuto depthmapX ni se comparo con su salida.
+
+EROSION
+  Escenario ilustrativo: retroceso uniforme de 1,8 m/ano (tasa maxima registrada en el proyecto) sobre la silueta
+  oficial de la isla. La erosion real varia por tramo.
