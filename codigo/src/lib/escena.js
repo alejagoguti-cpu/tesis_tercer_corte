@@ -39,11 +39,29 @@ const slrDelta = (t) => {
   return v1 + ((v1 - v0) * (t - t1)) / (t1 - t0);
 };
 export const nivelAgua = (t) => MAREA_M + TORMENTA_M + slrDelta(t) + SUBSIDENCIA_M_ANIO * t;
+
+// Marea de leva: oleaje de fondo que trepa por la costa. Ascenso máximo del agua (run-up con 2 % de excedencia)
+// con la fórmula empírica de Stockdon et al. (2006), para el temporal de referencia del mismo estudio de Cartagena
+// (olas de 2,3 m y 9 s, 8 nov 2010). La pendiente de la playa NO está medida en Tierra Bomba: es un supuesto (8 %).
+export const OLEAJE = { hs: 2.3, tp: 9, pendiente: 0.08 };
+const calcularRunup = ({ hs, tp, pendiente }) => {
+  const L0 = (9.81 * tp * tp) / (2 * Math.PI);
+  const setup = 0.35 * pendiente * Math.sqrt(hs * L0);
+  const swash = Math.sqrt(hs * L0 * (0.563 * pendiente * pendiente + 0.004));
+  return 1.1 * (setup + swash / 2);
+};
+export const RUNUP_M = calcularRunup(OLEAJE);
+/** nivel del agua (m sobre el nivel medio) en el horizonte t para cada escenario: 'tormenta' o 'leva' (con oleaje) */
+export const nivelModelo = (t, modelo) => nivelAgua(t) + (modelo === 'leva' ? RUNUP_M : 0);
+
 // inversa tabulada: año en que el nivel del agua alcanza una elevación dada
 const TAB_PASO = 0.25;
 const TAB_N = 241; // 0..60 años
-const TAB = Float32Array.from({ length: TAB_N }, (_, i) => nivelAgua(i * TAB_PASO));
-const anioDeNivel = (L) => {
+const TABS = {
+  tormenta: Float32Array.from({ length: TAB_N }, (_, i) => nivelModelo(i * TAB_PASO, 'tormenta')),
+  leva: Float32Array.from({ length: TAB_N }, (_, i) => nivelModelo(i * TAB_PASO, 'leva')),
+};
+const anioDeNivel = (L, TAB) => {
   if (L <= TAB[0]) return 0;
   if (L > TAB[TAB_N - 1]) return 999;
   let lo = 0;
@@ -324,9 +342,10 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   const gw = Math.ceil(W / GR);
   const gh = Math.ceil(H / GR);
   const floodYears = new Float32Array(gw * gh);
+  const nivelCelda = new Float32Array(gw * gh); // elevación mínima que el agua debe alcanzar para llegar a cada celda
   {
     const elev = new Float32Array(gw * gh);
-    const nivel = new Float32Array(gw * gh).fill(Infinity);
+    const nivel = nivelCelda.fill(Infinity);
     const cap = gw * gh * 5;
     const hk = new Float32Array(cap);
     const hv = new Int32Array(cap);
@@ -378,11 +397,25 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         if (nl < nivel[n]) { nivel[n] = nl; push(nl, n); }
       }
     }
-    for (let c = 0; c < gw * gh; c++) floodYears[c] = Number.isFinite(nivel[c]) ? anioDeNivel(nivel[c]) : 999;
   }
+  let floodModelo = '';
+  const calcularFlood = (modelo, nivelM = 2) => {
+    if (modelo === 'retroceso') return;
+    const clave = modelo === 'manual' ? `manual|${nivelM}` : modelo;
+    if (clave === floodModelo) return;
+    floodModelo = clave;
+    if (modelo === 'manual') {
+      // escenario manual: el agua está a +nivelM desde el primer año (lo que queda por debajo se inunda de inmediato)
+      for (let c = 0; c < gw * gh; c++) floodYears[c] = Number.isFinite(nivelCelda[c]) && nivelCelda[c] <= nivelM ? 0 : 999;
+      return;
+    }
+    const tab = TABS[modelo] || TABS.tormenta;
+    for (let c = 0; c < gw * gh; c++) floodYears[c] = Number.isFinite(nivelCelda[c]) ? anioDeNivel(nivelCelda[c], tab) : 999;
+  };
 
   // año de afectación por píxel: lo que ocurra primero entre el retroceso del borde y la cota que sube
-  const calcularPerdida = (modelo) => {
+  const calcularPerdida = (modelo, nivelM) => {
+    calcularFlood(modelo, nivelM);
     const hist = new Float64Array(31);
     for (let py = 0; py < H; py++) {
       const fy = (py + 0.5) / GR - 0.5;
@@ -392,7 +425,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         const i = py * W + px;
         if (!land[i]) { lostY[i] = 0; lostData[i * 4] = 0; continue; }
         let y = distM[i] / TASA;
-        if (modelo === 'cota') {
+        if (modelo !== 'retroceso') {
           const fx = (px + 0.5) / GR - 0.5;
           const gx0 = Math.max(0, Math.min(gw - 2, Math.floor(fx)));
           const ax = Math.max(0, Math.min(1, fx - gx0));
@@ -409,7 +442,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     for (let k = 1; k <= 30; k++) cumLostPx[k] = cumLostPx[k - 1] + hist[k];
     lostTex.needsUpdate = true;
   };
-  calcularPerdida('cota');
+  calcularPerdida('leva');
 
   const NX = small ? 130 : 180;
   const NY = Math.round((NX * H) / W);
@@ -870,9 +903,10 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     riesgoRed,
     km: { peatonal: redes.peatonal.km, motos: redes.motos.km },
     porTipo: { peatonal: redes.peatonal.porTipo, motos: redes.motos.porTipo },
-    modelo: 'cota',
+    modelo: 'leva',
   };
-  let curModelo = 'cota';
+  let curModelo = 'leva';
+  let curNivel = 2;
   let alCambiarModelo = () => {};
   const refrescarStats = () => {
     stats.ha = { total: ha(landPx), 10: ha(cumLostPx[10]), 20: ha(cumLostPx[20]), 30: ha(cumLostPx[30]) };
@@ -881,8 +915,8 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     stats.riesgoRed = calcularRiesgo();
     stats.modelo = curModelo;
   };
-  const recalcularTodo = (modelo) => {
-    calcularPerdida(modelo);
+  const recalcularTodo = (modelo, nivelM) => {
+    calcularPerdida(modelo, nivelM);
     houses.forEach((hh) => { hh.lostAt = lostAtXZ(hh.x, hh.z); });
     treeAll.forEach((tr) => { tr.lostAt = lostAtXZ(tr.x, tr.z); });
     Object.values(redes).forEach((r) => { r.piezas.forEach((p) => { p.lostAt = lostAtXZ(p.mx, p.mz); }); r.firma = ''; });
@@ -913,7 +947,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   };
 
   // ---------- estado objetivo y bucle ----------
-  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'cota' };
+  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'leva', nivelManual: 2 };
   // vista libre del usuario (zoom, giro, desplazamiento) sobre la pose de cada paso
   const vt = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
   const vi = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
@@ -965,9 +999,10 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     const t = (now - t0) / 1000;
 
     // modelo de afectación (solo retroceso / retroceso + cota)
-    if (T.modelo !== curModelo) {
+    if (T.modelo !== curModelo || (T.modelo === 'manual' && T.nivelManual !== curNivel)) {
       curModelo = T.modelo;
-      recalcularTodo(curModelo);
+      curNivel = T.nivelManual;
+      recalcularTodo(curModelo, curNivel);
       houseKey = '';
       treesYear = -2;
       alCambiarModelo();
