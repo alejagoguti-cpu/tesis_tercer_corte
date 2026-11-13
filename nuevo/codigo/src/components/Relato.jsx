@@ -4,6 +4,7 @@ import { GRUPOS_TIPO, TASA, nivelModelo, RUNUP_M, OLEAJE } from '../lib/escena.j
 import Red from './Red.jsx';
 import Social from './Social.jsx';
 import { PLAN_PASOS, planEstado, SeccionEsquema } from './Plan.jsx';
+import { ESP_PASOS, espEstado, PanelEspecies, IndiceEsp } from './Especies.jsx';
 import { PROGRAMA, PARQUE_RADIOS, HUMEDAL_RADIOS } from '../lib/plan.js';
 
 const fmt = (n, d = 0) => n.toLocaleString('es-CO', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -29,7 +30,8 @@ const CAPITULOS = [
   { id: 'sintaxis', n: '05', nombre: 'Sintaxis espacial' },
   { id: 'plan', n: '06', nombre: 'Plan maestro' },
   { id: 'esquema', n: '06', nombre: 'Esquema y criterios' },
-  { id: 'cierre', n: '07', nombre: 'Lo que sigue' },
+  { id: 'especies', n: '07', nombre: 'Especies' },
+  { id: 'cierre', n: '08', nombre: 'Lo que sigue' },
 ];
 
 const NAV = [
@@ -40,6 +42,7 @@ const NAV = [
   { id: 'vias', corto: 'Vías' },
   { id: 'sintaxis', corto: 'Sintaxis' },
   { id: 'plan', corto: 'Plan maestro' },
+  { id: 'especies', corto: 'Especies' },
   { id: 'cierre', corto: 'Cierre' },
 ];
 
@@ -136,7 +139,7 @@ function Cabecera({ cap }) {
           {NAV.map((c) => (
             <a key={c.id} href={`#${c.id}`} onClick={ir(c.id)} className="nav-cap" aria-current={c.id === activoId ? 'true' : undefined}>{c.corto}</a>
           ))}
-          <a href="https://anasoficasca-code.github.io/tierrabomba/" target="_blank" rel="noopener noreferrer" className="nav-cap">Especies ↗</a>
+          <a href="https://anasoficasca-code.github.io/tierrabomba/" target="_blank" rel="noopener noreferrer" className="nav-cap">Red de especies ↗</a>
         </nav>
         <p className="vidrio flex h-10 min-w-0 items-center gap-2 !rounded-[12px] px-3.5 font-mono text-[0.72rem] text-white/70">
           <span className="text-arcilla">{actual.n}</span>
@@ -552,7 +555,7 @@ function Cierre({ api, version }) {
   return (
     <section id="cierre" className="relative bg-[#05080b] text-white">
       <div className="mx-auto max-w-6xl px-5 py-24 sm:px-10 sm:py-32">
-        <p className="etiqueta text-arcilla">07 · Lo que sigue</p>
+        <p className="etiqueta text-arcilla">08 · Lo que sigue</p>
         <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">Lo que muestran los números, y lo que falta.</h2>
 
         <div className="mt-14 grid gap-12 lg:grid-cols-2">
@@ -676,6 +679,7 @@ export default function Relato({ api, sinEscena }) {
   const [cap, setCap] = useState('portada');
   const [pasoIdx, setPasoIdx] = useState(0);
   const [planIdx, setPlanIdx] = useState(0);
+  const [espIdx, setEspIdx] = useState(0);
   const [anio, setAnio] = useState(0);
   const [modo, setModo] = useState('perdida');
   const [ctrl, setCtrl] = useState({ radio: 'n', redRiesgo: 'peatonal', anioRiesgo: 30, modelo: 'leva', nivel: 2 });
@@ -714,7 +718,11 @@ export default function Relato({ api, sinEscena }) {
       const lf = clamp01(p * np - ip);
       est = { ...base, cam: PLAN_PASOS[ip].cam, year: 30, modo: 'perdida', casas: 1, dim: 0.3, plan: planEstado(ip, lf) };
     } else if (c === 'esquema') est = { ...base, cam: 'plan_general', year: 30, dim: 0.3, plan: planEstado(PLAN_PASOS.length - 1, 1) };
-    else est = { ...base, cam: 'isla', dim: 0.5 }; // social y cierre
+    else if (c === 'especies') {
+      const ne = ESP_PASOS.length;
+      const ie = Math.min(ne - 1, Math.floor(p * ne));
+      est = { ...base, cam: 'esp_region', casas: 0, esp: espEstado(ie, clamp01(p * ne - ie)) };
+    } else est = { ...base, cam: 'isla', dim: 0.5 }; // social y cierre
     a.set(est);
   }, []);
 
@@ -735,6 +743,10 @@ export default function Relato({ api, sinEscena }) {
       const p = clamp01(-r.top / total);
       let pi = S.current.pasoIdx;
       if (actual === 'sintaxis') pi = Math.min(PASOS.length - 1, Math.floor(p * PASOS.length));
+      if (actual === 'especies') {
+        const ie = Math.min(ESP_PASOS.length - 1, Math.floor(p * ESP_PASOS.length));
+        setEspIdx((x) => (x === ie ? x : ie));
+      }
       if (actual === 'plan') {
         const ip = Math.min(PLAN_PASOS.length - 1, Math.floor(p * PLAN_PASOS.length));
         setPlanIdx((x) => (x === ip ? x : ip));
@@ -759,7 +771,7 @@ export default function Relato({ api, sinEscena }) {
   }, [aplicar, api]);
 
   useEffect(() => { aplicar(); }, [ctrl, api, aplicar]);
-  useEffect(() => { if (!['erosion', 'vias', 'sintaxis', 'plan'].includes(cap)) setExplorar(false); }, [cap]);
+  useEffect(() => { if (!['erosion', 'vias', 'sintaxis', 'plan', 'especies'].includes(cap)) setExplorar(false); }, [cap]);
   useEffect(() => { api?.alCambiarModelo(() => setVersion((v) => v + 1)); }, [api]);
 
   const irAPaso = (i) => {
@@ -829,10 +841,18 @@ export default function Relato({ api, sinEscena }) {
       {/* 06 · plan maestro 3D (la escena la mueve el scroll) */}
       <section id="plan" style={{ height: `${PLAN_PASOS.length * ALTO_PASO}svh` }} aria-label="Plan maestro en 3D" />
       <SeccionEsquema />
+      {/* 07 · especies como nube de puntos (la escena la mueve el scroll) */}
+      <section id="especies" style={{ height: `${ESP_PASOS.length * ALTO_PASO}svh` }} aria-label="Especies de la isla como nube de puntos" />
 
       {/* zoom y exploración del mapa 3D */}
-      {api && ['erosion', 'vias', 'sintaxis', 'plan'].includes(cap) && <ControlesVista api={api} explorar={explorar} setExplorar={setExplorar} panelOculto={panelOculto} setPanelOculto={setPanelOculto} />}
-      {api && explorar && ['erosion', 'vias', 'sintaxis', 'plan'].includes(cap) && <CapaExplorar api={api} />}
+      {api && ['erosion', 'vias', 'sintaxis', 'plan', 'especies'].includes(cap) && <ControlesVista api={api} explorar={explorar} setExplorar={setExplorar} panelOculto={panelOculto} setPanelOculto={setPanelOculto} />}
+      {api && explorar && ['erosion', 'vias', 'sintaxis', 'plan', 'especies'].includes(cap) && <CapaExplorar api={api} />}
+      {api && cap === 'especies' && (
+        <>
+          {!panelOculto && <PanelEspecies paso={ESP_PASOS[espIdx]} idx={espIdx} esp={api.especies} contenedor={contenedorPanel} />}
+          <IndiceEsp activo={espIdx} />
+        </>
+      )}
       {api && cap === 'plan' && (
         <>
           {!panelOculto && <PanelPlan paso={PLAN_PASOS[planIdx]} idx={planIdx} stats={stats} version={version} />}

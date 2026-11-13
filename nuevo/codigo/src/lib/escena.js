@@ -205,7 +205,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   let disposed = false;
 
   // ---------- carga de datos ----------
-  const TOTAL = 14;
+  const TOTAL = 16;
   let hechas = 0;
   const track = (p) => p.then((r) => { hechas++; onProgreso(0.6 * (hechas / TOTAL), 'Descargando la isla'); return r; });
   const jsonOf = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u); return r.json(); });
@@ -219,7 +219,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     return JSON.parse(new TextDecoder().decode(u8));
   };
 
-  const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, cartagenaMascaraImg, ...demImgs] = await Promise.all([
+  const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, cartagenaMascaraImg, espJson, interJson, ...demImgs] = await Promise.all([
     track(loadImg(`${BASE}assets/texturas/sat_base.jpg`)),
     track(loadImg(`${BASE}datos/isla_mascara_osm.png`)),
     track(loadImg(`${BASE}assets/texturas/tierrabomba_satelite.jpg`)),
@@ -229,6 +229,8 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     track(jsonOf(`${BASE}datos/sintaxis.json`)),
     track(loadImg(`${BASE}datos/water_normals_fine.jpg`)),
     track(loadImg(`${BASE}datos/cartagena_mascara.png`)),
+    track(jsonOf(`${BASE}assets/data/especies.json`)),
+    track(jsonOf(`${BASE}assets/data/interacciones.json`)),
     track(loadImg(`${BASE}datos/elevacion/1187_1929.png`)),
     track(loadImg(`${BASE}datos/elevacion/1188_1929.png`)),
     track(loadImg(`${BASE}datos/elevacion/1187_1930.png`)),
@@ -1273,6 +1275,163 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     areaParqueHa: () => ha(cumLostPx[30]),
   };
 
+  // ===========================================================================
+  // ---------- vista de especies: nube de puntos con los registros reales ----------
+  // Datos: especies.json e interacciones.json de la red de especies de la isla (436 taxones, 729 registros georreferenciados).
+  // Cada punto brillante es un registro real en su posición; no se inventa ninguna. Los puntos tenues forman el relieve.
+  // ===========================================================================
+  const espGroup = new THREE.Group();
+  espGroup.visible = false;
+  scene.add(espGroup);
+  const espXZ = (x, z) => llToXZ(geoRef.lon0 + x / geoRef.kx, geoRef.lat0 - z / geoRef.ky);
+  const NCAT = 10;
+  const espPx = Math.min(window.devicePixelRatio || 1, 2);
+  // relieve: retícula regular sobre la tierra de la isla, color por altura (azul profundo a blanco frío)
+  const reliefPos = [];
+  const reliefCol = [];
+  {
+    const PS = small ? 6 : 4;
+    let ymax = 1;
+    const tmp = [];
+    for (let py = 2; py < H; py += PS) {
+      for (let px = 2; px < W; px += PS) {
+        if (!land[py * W + px]) continue;
+        // desplazamiento pseudoaleatorio dentro de la celda: evita los anillos (moiré) de una retícula perfecta
+        const jx = (Math.sin(px * 12.9898 + py * 78.233) * 43758.5453) % 1;
+        const jz = (Math.sin(px * 39.3467 + py * 11.135) * 24634.6345) % 1;
+        const X = (((px + 0.5 + jx * (PS * 0.5)) / W) * (tx1 - tx0) + tx0 - txc) * mpt;
+        const Z = (((py + 0.5 + jz * (PS * 0.5)) / H) * (ty1 - ty0) + ty0 - tyc) * mpt;
+        const y = heightAtXZ(X, Z);
+        tmp.push(X, y, Z);
+        if (y > ymax) ymax = y;
+      }
+    }
+    const c0 = new THREE.Color(0x1d5f7a); const c1 = new THREE.Color(0xe4f7ff); const cc = new THREE.Color();
+    for (let i = 0; i < tmp.length; i += 3) {
+      reliefPos.push(tmp[i], tmp[i + 1], tmp[i + 2]);
+      cc.copy(c0).lerp(c1, Math.pow(tmp[i + 1] / ymax, 0.65));
+      reliefCol.push(cc.r, cc.g, cc.b);
+    }
+  }
+  const reliefGeo = new THREE.BufferGeometry();
+  reliefGeo.setAttribute('position', new THREE.Float32BufferAttribute(reliefPos, 3));
+  reliefGeo.setAttribute('aColor', new THREE.Float32BufferAttribute(reliefCol, 3));
+  const espU = { uTime: { value: 0 }, uPx: { value: espPx }, uAmt: { value: 0 }, uCat: { value: new Array(NCAT).fill(1) } };
+  const reliefMat = new THREE.ShaderMaterial({
+    uniforms: espU, transparent: true, depthWrite: false,
+    vertexShader: `attribute vec3 aColor; uniform float uTime; uniform float uPx; uniform float uAmt; varying vec3 vC; varying float vA;
+      void main(){ vC = aColor; vA = uAmt * (0.62 + 0.38 * sin(uTime * 0.7 + position.x * 0.0035 + position.z * 0.0028));
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = 1.9 * uPx; }`,
+    fragmentShader: `varying vec3 vC; varying float vA; void main(){ vec2 p = gl_PointCoord - 0.5; if (dot(p, p) > 0.25) discard; gl_FragColor = vec4(vC, vA); }`,
+  });
+  const reliefPts = new THREE.Points(reliefGeo, reliefMat);
+  reliefPts.frustumCulled = false;
+  reliefPts.renderOrder = 1;
+  espGroup.add(reliefPts);
+
+  // registros de especies
+  const CATS_ESP = [
+    { nombre: 'Aves', sub: 'Costeras, marinas y de manglar', color: '#5BB8EA' },
+    { nombre: 'Flora', sub: 'Árboles, manglar y pastos marinos', color: '#8CC17B' },
+    { nombre: 'Insectos', sub: 'Mariposas, hormigas, libélulas', color: '#E9B949' },
+    { nombre: 'Peces', sub: 'Arrecife y pradera marina', color: '#3FC6C2' },
+    { nombre: 'Moluscos', sub: 'Caracoles, bivalvos, pulpos', color: '#EE8FB6' },
+    { nombre: 'Arácnidos', sub: 'Arañas y escorpiones', color: '#CDA47D' },
+    { nombre: 'Mamíferos', sub: 'Terrestres y marinos', color: '#F28A4E' },
+    { nombre: 'Reptiles', sub: 'Iguanas, lagartos, tortugas', color: '#AA8DF0' },
+    { nombre: 'Anfibios', sub: 'Ranas y sapos', color: '#55D69E' },
+    { nombre: 'Hongos', sub: 'Hongos y líquenes', color: '#D9D4C2' },
+  ];
+  const espPos = []; const espCol = []; const espCat = []; const espSize = [];
+  const colE = new THREE.Color();
+  espJson.obs.forEach(([si, x, z]) => {
+    const cat = espJson.species[si].cat; // cada registro apunta a su especie (índice en la lista)
+    const [X, Z] = espXZ(x, z);
+    const dent = distAt(X, Z) >= 0;
+    const y = (dent ? heightAtXZ(X, Z) : 0) + 14;
+    espPos.push(X, y, Z);
+    colE.set(CATS_ESP[cat].color);
+    espCol.push(colE.r, colE.g, colE.b);
+    espCat.push(cat);
+    espSize.push(11);
+  });
+  const espGeo = new THREE.BufferGeometry();
+  espGeo.setAttribute('position', new THREE.Float32BufferAttribute(espPos, 3));
+  espGeo.setAttribute('aColor', new THREE.Float32BufferAttribute(espCol, 3));
+  espGeo.setAttribute('aCat', new THREE.Float32BufferAttribute(espCat, 1));
+  espGeo.setAttribute('aSize', new THREE.Float32BufferAttribute(espSize, 1));
+  const espMat = new THREE.ShaderMaterial({
+    uniforms: espU, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+    vertexShader: `attribute vec3 aColor; attribute float aCat; attribute float aSize; uniform float uPx; uniform float uAmt; uniform float uTime; uniform float uCat[${NCAT}]; varying vec3 vC; varying float vA;
+      void main(){ float m = uCat[int(aCat + 0.5)]; vC = aColor; vA = uAmt * (0.12 + 0.88 * m);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aSize * uPx * (0.55 + 0.75 * m) * (1.0 + 0.12 * sin(uTime * 2.0 + position.x * 0.01)); }`,
+    fragmentShader: `varying vec3 vC; varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard;
+        float core = smoothstep(0.2, 0.12, d); float halo = smoothstep(0.5, 0.05, d) * 0.4; gl_FragColor = vec4(vC * (core + halo) + vec3(0.5) * core, (core + halo) * vA); }`,
+  });
+  const espPts = new THREE.Points(espGeo, espMat);
+  espPts.frustumCulled = false;
+  espPts.renderOrder = 3;
+  espGroup.add(espPts);
+
+  // relaciones documentadas entre especies: arcos que se dibujan en orden
+  const REL_COLORES = ['#ef5350', '#ffa726', '#f06292', '#9ccc65', '#9575ef', '#26c6a2', '#cfd8dc', '#ff7043'];
+  const espPorTid = new Map(espJson.species.map((s) => [s.tid, s]));
+  const relPos = []; const relCol = [];
+  let relSeg = 0;
+  interJson.rel.forEach(([a, b, tipos]) => {
+    const sa = espPorTid.get(a); const sb = espPorTid.get(b);
+    if (!sa || !sb) return;
+    const [ax, az] = espXZ(sa.x, sa.z); const [bx, bz] = espXZ(sb.x, sb.z);
+    const dd = Math.hypot(bx - ax, bz - az);
+    const lift = Math.min(900, 0.2 * dd) + 30;
+    colE.set(REL_COLORES[tipos[0]] || '#ffffff');
+    const N = 18;
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N; const t1 = (k + 1) / N;
+      relPos.push(ax + (bx - ax) * t0, 14 + 4 * t0 * (1 - t0) * lift, az + (bz - az) * t0, ax + (bx - ax) * t1, 14 + 4 * t1 * (1 - t1) * lift, az + (bz - az) * t1);
+      relCol.push(colE.r, colE.g, colE.b, colE.r, colE.g, colE.b);
+    }
+    relSeg += N;
+  });
+  const relGeo = new THREE.BufferGeometry();
+  relGeo.setAttribute('position', new THREE.Float32BufferAttribute(relPos, 3));
+  relGeo.setAttribute('color', new THREE.Float32BufferAttribute(relCol, 3));
+  const relMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+  const relLineas = new THREE.LineSegments(relGeo, relMat);
+  relLineas.frustumCulled = false;
+  relLineas.renderOrder = 2;
+  espGroup.add(relLineas);
+
+  // encuadre de la vista: caja de los registros (percentiles 3 a 97 para no alejar la cámara por un registro lejano)
+  const espBox = (() => {
+    const xs = []; const zs = [];
+    for (let i = 0; i < espPos.length; i += 3) { xs.push(espPos[i]); zs.push(espPos[i + 2]); }
+    xs.sort((a, b) => a - b); zs.sort((a, b) => a - b);
+    const q = (arr, p) => arr[Math.min(arr.length - 1, Math.max(0, Math.floor(p * (arr.length - 1))))];
+    return { cx: (q(xs, 0.03) + q(xs, 0.97)) / 2, cz: (q(zs, 0.03) + q(zs, 0.97)) / 2, s: Math.max(q(xs, 0.97) - q(xs, 0.03), q(zs, 0.97) - q(zs, 0.03)) };
+  })();
+  const espC = { amt: 0, rel: 0, cats: new Array(NCAT).fill(1) };
+  const espFondo = new THREE.Color(0x000000);
+  const actualizarEsp = (dt, t) => {
+    const eT = T.esp;
+    espC.amt += ((eT ? 1 : 0) - espC.amt) * expo(dt, 3.2);
+    espC.rel += ((eT ? eT.rel : 0) - espC.rel) * expo(dt, 3);
+    for (let i = 0; i < NCAT; i++) espC.cats[i] += ((eT ? eT.cats[i] : 1) - espC.cats[i]) * expo(dt, 4);
+    const act = espC.amt > 0.01;
+    espGroup.visible = act;
+    const enEsp = espC.amt > 0.5;
+    terrain.visible = patch.visible = !enEsp;
+    sky.visible = water.visible = !enEsp;
+    scene.background = enEsp ? espFondo : null;
+    if (!act) return;
+    espU.uAmt.value = espC.amt; espU.uTime.value = t;
+    for (let i = 0; i < NCAT; i++) espU.uCat.value[i] = espC.cats[i];
+    relLineas.visible = espC.rel > 0.01;
+    relMat.opacity = 0.2 * clamp01(espC.rel * 2) * espC.amt;
+    relGeo.setDrawRange(0, Math.max(2, Math.floor(relSeg * clamp01(espC.rel)) * 2));
+  };
+
   // ---------- capas de color ----------
   const colorTmp = new THREE.Color();
   const gris = new THREE.Color().setRGB(0.30, 0.32, 0.34);
@@ -1380,11 +1539,15 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     plan_escuela: () => ({ pos: new THREE.Vector3(sX + 70, sY + 120, sZ + 190), look: new THREE.Vector3(sX, sY + 4, sZ) }),
     plan_vias: () => ({ pos: new THREE.Vector3(mCx + 500, 1900, mCz + 1700), look: new THREE.Vector3(mCx + 150, 0, mCz - 120) }),
     plan_parque: () => ({ pos: new THREE.Vector3(pkX + 240, 700, pkZ + 820), look: new THREE.Vector3(pkX - 20, 0, pkZ - 40) }),
+    esp_region: (t) => {
+      const off = window.innerWidth >= 1024 ? -espBox.s * 0.2 : 0; // en pantallas anchas el conjunto se corre a la derecha del panel
+      return { pos: new THREE.Vector3(espBox.cx + off + Math.sin(t * 0.06) * espBox.s * 0.22, espBox.s * 0.95, espBox.cz + espBox.s * (0.98 - 0.08 * Math.cos(t * 0.06))), look: new THREE.Vector3(espBox.cx + off, 0, espBox.cz) };
+    },
     casco_alto: () => ({ pos: new THREE.Vector3(vx + 250, 1500, vz + 1500), look: new THREE.Vector3(vx, 0, vz) }),
   };
 
   // ---------- estado objetivo y bucle ----------
-  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'leva', nivelManual: 2, plan: null };
+  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'leva', nivelManual: 2, plan: null, esp: null };
   // vista libre del usuario (zoom, giro, desplazamiento) sobre la pose de cada paso
   const vt = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
   const vi = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
@@ -1557,6 +1720,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     waterUniforms.uTime.value = t;
     for (const k of PLAN_KEYS) planT[k] = (T.plan && T.plan[k]) || 0;
     actualizarPlan(dt, t, cur.escala);
+    actualizarEsp(dt, t);
     renderer.render(scene, camera);
     if (!shown) {
       shown = true;
@@ -1569,6 +1733,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
 
   return {
     stats,
+    especies: { species: espJson.species, obs: espJson.obs, cats: CATS_ESP, rel: interJson.rel, relTipos: interJson.tipos, relColores: REL_COLORES },
     datos: sintaxis,
     set(parcial) {
       if (parcial.cam && parcial.cam !== T.cam) resetVista();
