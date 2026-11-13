@@ -4,7 +4,7 @@ Presentación en 3D de la tesis *Planificación y adaptación territorial frente
 
 Sitio: https://alejagoguti-cpu.github.io/tesis_tercer_corte/
 
-Versión alterna con estética de campo oscuro y el territorio como nube de puntos: https://alejagoguti-cpu.github.io/tesis_tercer_corte/puntos/ (código en puntos/codigo/).
+Versión nueva con otro diseño (negro, Inter, acento verde azulado, paneles redondeados): https://alejagoguti-cpu.github.io/tesis_tercer_corte/nuevo/ (código en `nuevo/codigo/`).
 
 ## Qué cuenta
 

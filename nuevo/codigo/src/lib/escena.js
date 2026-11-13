@@ -5,7 +5,6 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { BASE, prepararEspecies, instanciarArboles } from './arboles.js';
 import { rampa, percentil } from './paleta.js';
-import { puntear } from './puntos.js';
 import { MESETA, ESCUELA, VIVIENDAS, PARQUE, HUMEDAL, VIAS, CORREDORES, PROGRAMA, PARQUE_RADIOS, HUMEDAL_RADIOS } from './plan.js';
 
 // =============================================================================
@@ -558,7 +557,6 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   };
   const terrainMat = new THREE.MeshStandardMaterial({ map: textureFrom(satImg, maxTex), roughness: 1, metalness: 0 });
   parchearTerreno(terrainMat, U);
-  puntear(terrainMat);
   const terrain = new THREE.Mesh(geo, terrainMat);
 
   // ---------- detalle del casco urbano (foto z18) ----------
@@ -602,7 +600,6 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   pgeo.computeVertexNormals();
   const patchMat = new THREE.MeshStandardMaterial({ map: textureFrom(patchImg, maxTex), roughness: 1, metalness: 0 });
   parchearTerreno(patchMat, U);
-  puntear(patchMat);
   const patch = new THREE.Mesh(pgeo, patchMat);
 
   // ---------- punto de referencia: casco urbano ----------
@@ -667,7 +664,6 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   const houseGeo = new THREE.BoxGeometry(1, 1, 1);
   houseGeo.translate(0, 0.5, 0);
   const houseMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, transparent: true, opacity: 1 });
-  puntear(houseMat, { radio: 0.34 });
   const houseMesh = new THREE.InstancedMesh(houseGeo, houseMat, houses.length);
   houseMesh.frustumCulled = false;
   const m4 = new THREE.Matrix4();
@@ -712,15 +708,13 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     map: terrainMat.map, alphaMap: ctxMask, roughness: 1, metalness: 0, transparent: true, opacity: 0, alphaTest: 0.02,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
-  puntear(ctxMat);
   const contexto = new THREE.Mesh(ctxGeo, ctxMat);
   contexto.visible = false;
   contexto.renderOrder = 1;
 
   // ---------- escena, cielo, mar, luces ----------
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x050607);
-  scene.fog = new THREE.FogExp2(0x050607, 0.000011);
+  scene.fog = new THREE.FogExp2(0x9fc6d4, 0.000011);
   scene.add(terrain, patch, houseMesh, treesGroup, contexto);
   const sky = new Sky();
   sky.scale.setScalar(450000);
@@ -731,7 +725,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   su.mieDirectionalG.value = 0.82;
   const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 38), THREE.MathUtils.degToRad(215));
   su.sunPosition.value.copy(sunDir);
-  // (sin cielo ni mar: campo oscuro, el territorio es una nube de puntos)
+  scene.add(sky);
 
   const normals = new THREE.Texture(normalsImg);
   normals.wrapS = normals.wrapT = THREE.RepeatWrapping;
@@ -832,7 +826,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   });
   const water = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000), waterMat);
   water.rotation.x = -Math.PI / 2;
-  // el mar no se dibuja
+  scene.add(water);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
   sun.position.copy(sunDir).multiplyScalar(8000);
   scene.add(sun, new THREE.HemisphereLight(0xcfe6ff, 0x6b5d3a, 0.7));
@@ -1278,8 +1272,6 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     nVuelan: () => nVuelan,
     areaParqueHa: () => ha(cumLostPx[30]),
   };
-
-  planGroup.traverse((o) => { const m = o.material; if (m && m.isMeshStandardMaterial) puntear(m, { radio: 0.34 }); });
 
   // ---------- capas de color ----------
   const colorTmp = new THREE.Color();

@@ -119,21 +119,21 @@ export function SeccionEsquema() {
   const leyenda = [
     ['#d8ccb4', 'Meseta segura +22 m', '#1d6f6a'],
     ['#c86d51', 'Viviendas reubicadas', null],
-    ['#0b1015', 'Complejo educativo', null],
+    ['#e6e8ea', 'Complejo educativo', null],
     ['#b8791f', 'Vías (arterial, anular, colectora)', null],
     ['#2f9a63', 'Corredores ecológicos', null],
     ['#5e9c6b', 'Parque ecológico (propuesta)', null],
     ['#4a8fbf', 'Humedal (propuesta)', null],
   ];
   return (
-    <section id="esquema" className="relative bg-papel text-tinta">
+    <section id="esquema" className="relative bg-[#05080b] text-white">
       <div className="mx-auto max-w-6xl px-5 py-20 sm:px-10 sm:py-28">
         <p className="etiqueta text-arcilla">06 · Plan maestro · Esquema y criterios</p>
         <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">El plan, en una sola planta.</h2>
         <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,34rem)_1fr]">
           <figure>
-            <div className="border border-tinta/20"><EsquemaPlan /></div>
-            <figcaption className="mt-3 text-xs leading-relaxed text-tinta/60">
+            <div className="overflow-hidden rounded-2xl border border-white/12"><EsquemaPlan /></div>
+            <figcaption className="mt-3 text-xs leading-relaxed text-white/60">
               Esquema básico, no a escala de proyecto. Polígono de la meseta, vías y puntos estratégicos tomados del código de la tesis; las 120 viviendas están dibujadas en una cuadrícula esquemática dentro de la meseta; el parque y el humedal son una propuesta de esta presentación y su tamaño es indicativo.
             </figcaption>
           </figure>
@@ -145,7 +145,7 @@ export function SeccionEsquema() {
                 </li>
               ))}
             </ul>
-            <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-tinta/20 pt-5 sm:grid-cols-3">
+            <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-white/12 pt-5 sm:grid-cols-3">
               {[
                 [`+${PROGRAMA.cotaM} m`, 'cota de implantación'],
                 [`${PROGRAMA.viviendas}`, 'viviendas piloto'],
@@ -154,21 +154,21 @@ export function SeccionEsquema() {
                 [`${PROGRAMA.estudiantes}`, 'estudiantes'],
                 [`${PROGRAMA.usuariosFinDeSemana.toLocaleString('es-CO')}`, 'usuarios en fin de semana'],
               ].map(([v, t]) => (
-                <div key={t}><dt className="num text-3xl font-semibold leading-none">{v}</dt><dd className="mt-1.5 text-xs text-tinta/60">{t}</dd></div>
+                <div key={t}><dt className="num text-3xl font-semibold leading-none">{v}</dt><dd className="mt-1.5 text-xs text-white/60">{t}</dd></div>
               ))}
             </dl>
           </div>
         </div>
 
-        <h3 className="etiqueta mt-20 text-tinta/55">Criterios de diseño</h3>
+        <h3 className="etiqueta mt-20 text-white/55">Criterios de diseño</h3>
         <ol className="regla mt-4 grid gap-x-10 sm:grid-cols-2">
           {CRITERIOS.map((c) => (
             <li key={c.n} className="regla grid grid-cols-[2.5rem_1fr] gap-3 py-5 first:border-t-0 sm:[&:nth-child(2)]:border-t-0">
               <span className="etiqueta text-arcilla">{c.n}</span>
               <div>
                 <p className="text-lg font-semibold leading-snug tracking-tight">{c.titulo}</p>
-                <p className="mt-1.5 text-[15px] leading-relaxed text-tinta/80">{c.texto}</p>
-                <p className="etiqueta mt-2 text-tinta/45">Fuente: {c.fuente}</p>
+                <p className="mt-1.5 text-[15px] leading-relaxed text-white/80">{c.texto}</p>
+                <p className="etiqueta mt-2 text-white/45">Fuente: {c.fuente}</p>
               </div>
             </li>
           ))}

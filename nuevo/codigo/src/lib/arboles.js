@@ -4,8 +4,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 // Árboles reales: modelos escaneados Island Tree 01 y 02 (Poly Haven, CC0) colocados SOLO en las
 // posiciones de copas detectadas en la foto satelital (vegetacion.json). No se inventa ninguna posición.
 
-import { puntear } from './puntos.js';
-
 export const BASE = (() => {
   const b = import.meta.env.BASE_URL || './';
   return b.endsWith('/') ? b : `${b}/`;
@@ -46,7 +44,6 @@ export async function prepararEspecies() {
       p.geometry.applyMatrix4(norm);
       p.material = p.material.clone();
       p.material.side = THREE.DoubleSide;
-      puntear(p.material, { radio: 0.36 });
       if (p.kind === 'leaf') {
         p.material.alphaTest = Math.max(p.material.alphaTest || 0, 0.4);
         p.material.color.multiplyScalar(1.9);

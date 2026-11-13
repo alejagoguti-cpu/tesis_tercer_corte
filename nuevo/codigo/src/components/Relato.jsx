@@ -119,26 +119,29 @@ function Ranking({ titulo, items }) {
 /* ---------- cabecera ---------- */
 function Cabecera({ cap }) {
   const actual = CAPITULOS.find((c) => c.id === cap) || CAPITULOS[0];
-  const claro = cap === 'cierre' || cap === 'esquema';
+  const claro = false;
   const activoId = actual.id === 'esquema' ? 'plan' : actual.id;
   const ir = (id) => (e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); };
   return (
-    <header className={`fixed inset-x-0 top-0 z-30 pb-5 ${claro ? 'claro bg-papel/92 backdrop-blur-sm' : 'bg-gradient-to-b from-tinta/90 via-tinta/45 to-transparent'}`}>
-      <div className={`flex items-center justify-between gap-5 px-4 pt-4 sm:px-8 sm:pt-5 ${claro ? 'text-tinta/70' : 'text-white/70'}`}>
-        <p className="pointer-events-none shrink-0 text-[0.74rem] text-[#7a8480]">Tierra Bomba<span className="hidden xl:inline"> · Cartagena, Bolívar · encuadre isla</span></p>
-        <nav aria-label="Capítulos" className="hidden items-center gap-6 lg:flex">
+    <header className="pointer-events-none fixed inset-x-0 top-0 z-30">
+      <div className="progreso-pista h-[3px] w-full bg-white/[0.06]">
+        <div className="progreso progreso-nativo h-full w-full bg-arcilla" />
+      </div>
+      <div className="flex items-center justify-between gap-3 px-3 pt-3 sm:px-5">
+        <p className="vidrio pointer-events-auto flex h-10 shrink-0 items-center gap-2 !rounded-[12px] px-3.5 text-[0.82rem] font-bold tracking-tight text-white sm:text-sm">
+          <span className="inline-block h-2 w-2 rounded-full bg-arcilla" aria-hidden="true" />
+          Tierra <span className="text-arcilla">Bomba</span>
+        </p>
+        <nav aria-label="Capítulos" className="vidrio pointer-events-auto hidden h-10 items-center gap-0.5 !rounded-full px-1.5 lg:flex">
           {NAV.map((c) => (
             <a key={c.id} href={`#${c.id}`} onClick={ir(c.id)} className="nav-cap" aria-current={c.id === activoId ? 'true' : undefined}>{c.corto}</a>
           ))}
+          <a href="https://anasoficasca-code.github.io/tierrabomba/" target="_blank" rel="noopener noreferrer" className="nav-cap">Especies ↗</a>
         </nav>
-        <p className="pointer-events-none truncate text-right font-mono text-[0.74rem] text-[#7a8480]">
-          <span className={claro ? 'text-[#4f6582]' : 'text-arcilla'}>{actual.n}</span>
-          <span className="mx-2 opacity-40">/</span>
-          <span className="lg:hidden">{actual.nombre}</span><span className="hidden lg:inline">Tercer corte</span>
+        <p className="vidrio flex h-10 min-w-0 items-center gap-2 !rounded-[12px] px-3.5 font-mono text-[0.72rem] text-white/70">
+          <span className="text-arcilla">{actual.n}</span>
+          <span className="truncate"><span className="lg:hidden">{actual.nombre}</span><span className="hidden lg:inline">Tercer corte</span></span>
         </p>
-      </div>
-      <div className={`pointer-events-none mt-3 h-px w-full ${claro ? 'bg-tinta/10' : 'bg-white/10'}`}>
-        <div className={`progreso progreso-nativo h-full w-full ${claro ? 'bg-[#4f6582]' : 'bg-arcilla'}`} />
       </div>
     </header>
   );
@@ -547,14 +550,14 @@ function Cierre({ api, version }) {
   }, [d, s, version]);
 
   return (
-    <section id="cierre" className="relative bg-papel text-tinta">
+    <section id="cierre" className="relative bg-[#05080b] text-white">
       <div className="mx-auto max-w-6xl px-5 py-24 sm:px-10 sm:py-32">
         <p className="etiqueta text-arcilla">07 · Lo que sigue</p>
         <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">Lo que muestran los números, y lo que falta.</h2>
 
         <div className="mt-14 grid gap-12 lg:grid-cols-2">
           <div>
-            <h3 className="etiqueta text-tinta/55">Resultados calculados</h3>
+            <h3 className="etiqueta text-white/55">Resultados calculados</h3>
             <ol className="regla mt-4">
               {hallazgos.map((h, i) => (
                 <li key={i} className="regla grid grid-cols-[2.5rem_1fr] gap-3 py-4 first:border-t-0">
@@ -565,7 +568,7 @@ function Cierre({ api, version }) {
             </ol>
           </div>
           <div>
-            <h3 className="etiqueta text-tinta/55">Límites de este análisis</h3>
+            <h3 className="etiqueta text-white/55">Límites de este análisis</h3>
             <ul className="regla mt-4">
               {[
                 'La erosión se modela como un retroceso uniforme del borde más la inundación de la tierra baja con niveles medidos en Cartagena, no en la isla. El relieve (30 m de resolución) tiene varios metros de error vertical. No distingue tramos ni obras de defensa.',
@@ -585,7 +588,7 @@ function Cierre({ api, version }) {
             ['Versión para la comunidad', 'Territorio, historia, riesgos y el nuevo barrio, para quienes habitan la isla.', 'https://alejagoguti-cpu.github.io/tesis/#/comunidad'],
             ['Tesis completa', 'La plataforma con el marco, los módulos técnicos y el visor 3D.', 'https://alejagoguti-cpu.github.io/tesis/'],
           ].map(([t, sub, href]) => (
-            <a key={t} href={href} target="_blank" rel="noopener noreferrer" className="group block border border-tinta/20 p-6 transition-colors hover:border-tinta hover:bg-tinta hover:text-papel">
+            <a key={t} href={href} target="_blank" rel="noopener noreferrer" className="group block rounded-2xl border border-white/12 bg-white/[0.03] p-6 transition-colors hover:border-arcilla hover:bg-white/[0.06]">
               <p className="etiqueta opacity-60">Enlace</p>
               <p className="mt-2 text-2xl font-semibold tracking-tight">{t} <span className="inline-block transition-transform group-hover:translate-x-1">→</span></p>
               <p className="mt-2 text-sm opacity-70">{sub}</p>
@@ -593,7 +596,7 @@ function Cierre({ api, version }) {
           ))}
         </div>
 
-        <footer className="mt-20 border-t border-tinta/20 pt-6 text-xs leading-relaxed text-tinta/60">
+        <footer className="mt-20 border-t border-white/12 pt-6 text-xs leading-relaxed text-white/60">
           <p>Alejandra Gómez · Ana Casas · Tesis de grado en Arquitectura y Urbanismo · 2026</p>
           <p className="mt-2">
             Fuentes: imagen satelital Esri World Imagery (Esri, Maxar, Earthstar Geographics y la comunidad GIS); relieve Terrain Tiles (Mapzen / AWS Open Data); línea de costa y silueta de la isla © OpenStreetMap contributors; niveles de marea, tormenta y ascenso del mar de Orejarena-Rondón, Sayol et al. (2019), Frontiers in Marine Science 6:614; vías y muelles © OpenStreetMap contributors (ODbL);
@@ -610,14 +613,14 @@ function ControlesVista({ api, explorar, setExplorar, panelOculto, setPanelOcult
   const btn = 'ficha !h-9 !w-9 !px-0 grid place-items-center !text-base';
   return (
     <div className="fixed right-3 top-14 z-20 flex flex-col items-end gap-2 sm:right-6 sm:top-16">
-      <button type="button" className="ficha !h-9 vidrio !rounded-[3px]" aria-pressed={explorar} onClick={() => setExplorar((e) => !e)}>
+      <button type="button" className="ficha !h-9 vidrio !rounded-[10px]" aria-pressed={explorar} onClick={() => setExplorar((e) => !e)}>
         {explorar ? 'Explorando · salir' : 'Explorar el mapa'}
       </button>
-      <button type="button" className="ficha !h-9 vidrio !rounded-[3px]" aria-pressed={panelOculto} onClick={() => setPanelOculto((v) => !v)}>{panelOculto ? 'Mostrar panel' : 'Ocultar panel'}</button>
+      <button type="button" className="ficha !h-9 vidrio !rounded-[10px]" aria-pressed={panelOculto} onClick={() => setPanelOculto((v) => !v)}>{panelOculto ? 'Mostrar panel' : 'Ocultar panel'}</button>
       <div className="flex gap-1.5">
-        <button type="button" className={`${btn} vidrio !rounded-[3px]`} aria-label="Acercar" onClick={() => api.vista.zoom(0.65)}>+</button>
-        <button type="button" className={`${btn} vidrio !rounded-[3px]`} aria-label="Alejar" onClick={() => api.vista.zoom(1 / 0.65)}>−</button>
-        <button type="button" className={`${btn} vidrio !rounded-[3px]`} aria-label="Restablecer la vista" title="Restablecer la vista" onClick={() => api.vista.reset()}>⟲</button>
+        <button type="button" className={`${btn} vidrio !rounded-[10px]`} aria-label="Acercar" onClick={() => api.vista.zoom(0.65)}>+</button>
+        <button type="button" className={`${btn} vidrio !rounded-[10px]`} aria-label="Alejar" onClick={() => api.vista.zoom(1 / 0.65)}>−</button>
+        <button type="button" className={`${btn} vidrio !rounded-[10px]`} aria-label="Restablecer la vista" title="Restablecer la vista" onClick={() => api.vista.reset()}>⟲</button>
       </div>
       {explorar && (
         <p className="vidrio max-w-[15rem] p-2.5 text-right text-[11px] leading-snug text-white/80">
