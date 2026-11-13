@@ -32,6 +32,17 @@ const CAPITULOS = [
   { id: 'cierre', n: '07', nombre: 'Lo que sigue' },
 ];
 
+const NAV = [
+  { id: 'portada', corto: 'Inicio' },
+  { id: 'problema', corto: 'Problema' },
+  { id: 'social', corto: 'Social' },
+  { id: 'erosion', corto: 'Erosión' },
+  { id: 'vias', corto: 'Vías' },
+  { id: 'sintaxis', corto: 'Sintaxis' },
+  { id: 'plan', corto: 'Plan maestro' },
+  { id: 'cierre', corto: 'Cierre' },
+];
+
 const RADIOS = [
   ['n', 'Toda la isla'],
   ['1200', '1,2 km'],
@@ -109,18 +120,25 @@ function Ranking({ titulo, items }) {
 function Cabecera({ cap }) {
   const actual = CAPITULOS.find((c) => c.id === cap) || CAPITULOS[0];
   const claro = cap === 'cierre' || cap === 'esquema';
+  const activoId = actual.id === 'esquema' ? 'plan' : actual.id;
+  const ir = (id) => (e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); };
   return (
-    <header className={`pointer-events-none fixed inset-x-0 top-0 z-30 pb-6 ${claro ? 'bg-papel/90 backdrop-blur-sm' : 'bg-gradient-to-b from-tinta/80 via-tinta/35 to-transparent'}`}>
-      <div className={`flex items-start justify-between gap-4 px-4 pt-4 sm:px-8 sm:pt-5 ${claro ? 'text-tinta/70' : 'text-white/75 [text-shadow:0_1px_12px_rgba(0,0,0,.6)]'}`}>
-        <p className="etiqueta">Tierra Bomba<span className="hidden sm:inline"> · Tercer corte</span></p>
-        <p className="etiqueta truncate text-right">
-          <span className="text-arcilla">{actual.n}</span>
+    <header className={`fixed inset-x-0 top-0 z-30 pb-5 ${claro ? 'claro bg-papel/92 backdrop-blur-sm' : 'bg-gradient-to-b from-tinta/90 via-tinta/45 to-transparent'}`}>
+      <div className={`flex items-center justify-between gap-5 px-4 pt-4 sm:px-8 sm:pt-5 ${claro ? 'text-tinta/70' : 'text-white/70'}`}>
+        <p className="pointer-events-none shrink-0 text-[0.74rem] text-[#7a8480]">Tierra Bomba<span className="hidden xl:inline"> · Cartagena, Bolívar · encuadre isla</span></p>
+        <nav aria-label="Capítulos" className="hidden items-center gap-6 lg:flex">
+          {NAV.map((c) => (
+            <a key={c.id} href={`#${c.id}`} onClick={ir(c.id)} className="nav-cap" aria-current={c.id === activoId ? 'true' : undefined}>{c.corto}</a>
+          ))}
+        </nav>
+        <p className="pointer-events-none truncate text-right font-mono text-[0.74rem] text-[#7a8480]">
+          <span className={claro ? 'text-[#4f6582]' : 'text-arcilla'}>{actual.n}</span>
           <span className="mx-2 opacity-40">/</span>
-          {actual.nombre}
+          <span className="lg:hidden">{actual.nombre}</span><span className="hidden lg:inline">Tercer corte</span>
         </p>
       </div>
-      <div className={`mt-3 h-[2px] w-full ${claro ? 'bg-tinta/10' : 'bg-white/10'}`}>
-        <div className="progreso progreso-nativo h-full w-full bg-arcilla" />
+      <div className={`pointer-events-none mt-3 h-px w-full ${claro ? 'bg-tinta/10' : 'bg-white/10'}`}>
+        <div className={`progreso progreso-nativo h-full w-full ${claro ? 'bg-[#4f6582]' : 'bg-arcilla'}`} />
       </div>
     </header>
   );
