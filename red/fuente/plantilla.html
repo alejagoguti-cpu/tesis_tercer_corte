@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<title>Red de actores · Bavaria Común</title>
+<meta name="description" content="Red interactiva de actores de Bavaria Común: 57 actores y 120 relaciones de alimento, dinero, gobernanza, formación, autorización y hábitat." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --fondo: #000; --panel: rgba(8, 12, 16, 0.82); --linea: rgba(255, 255, 255, 0.1); --linea2: rgba(255, 255, 255, 0.2);
+  --txt: #f1f5f9; --txt2: #9aa7b4; --txt3: #5f6c78; --acento: #4fb6b0;
+  --sans: 'Inter', system-ui, sans-serif; --mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--txt); font-family: var(--sans); overflow: hidden; -webkit-font-smoothing: antialiased; }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+canvas.sobre { cursor: pointer; } canvas.arrastra { cursor: grabbing; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.panel { background: var(--panel); border: 1px solid var(--linea); border-radius: 16px; backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3); box-shadow: 0 18px 50px -24px #000; }
+.mono { font-family: var(--mono); }
+.etq { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--txt3); font-weight: 500; }
+
+#top { position: fixed; z-index: 10; top: 12px; left: 12px; right: 12px; display: flex; gap: 10px; align-items: center; pointer-events: none; }
+#top > * { pointer-events: auto; }
+.marca { height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 14px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
+.marca i { width: 8px; height: 8px; border-radius: 50%; background: var(--acento); box-shadow: 0 0 10px var(--acento); }
+.marca span { color: var(--acento); }
+.buscar { position: relative; flex: 1 1 220px; max-width: 360px; }
+.buscar input { width: 100%; height: 42px; border-radius: 12px; border: 1px solid var(--linea); background: var(--panel); backdrop-filter: blur(16px); color: var(--txt); font: 500 0.9rem var(--sans); padding: 0 14px; outline: none; }
+.buscar input:focus { border-color: var(--acento); }
+.buscar input::placeholder { color: var(--txt3); }
+#res { position: absolute; top: 48px; left: 0; right: 0; max-height: 50vh; overflow: auto; display: none; padding: 6px; }
+#res button { display: flex; width: 100%; text-align: left; gap: 10px; align-items: center; background: none; border: 0; padding: 8px 10px; border-radius: 9px; font-size: 0.85rem; }
+#res button:hover, #res button:focus { background: rgba(255, 255, 255, 0.07); outline: none; }
+.seg { display: flex; padding: 3px; gap: 2px; height: 42px; align-items: center; }
+.seg button, .btn { height: 34px; padding: 0 12px; border: 0; border-radius: 10px; background: none; color: var(--txt2); font-size: 0.8rem; font-weight: 600; transition: background 0.15s, color 0.15s; white-space: nowrap; }
+.seg button:hover, .btn:hover { color: var(--txt); background: rgba(255, 255, 255, 0.06); }
+.seg button[aria-pressed='true'], .btn[aria-pressed='true'] { color: var(--acento); background: rgba(79, 182, 176, 0.16); }
+.btn { border: 1px solid var(--linea); height: 42px; border-radius: 12px; background: var(--panel); backdrop-filter: blur(16px); }
+.espacio { flex: 1; }
+#btnFiltros { display: none; }
+
+#izq { position: fixed; z-index: 9; top: 66px; left: 12px; bottom: 12px; width: 300px; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+#der { position: fixed; z-index: 9; top: 66px; right: 12px; bottom: 12px; width: 340px; overflow: auto; padding: 18px; display: none; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+#der.on { display: block; animation: entra 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes entra { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+h1 { margin: 0; font-size: 1.15rem; line-height: 1.15; letter-spacing: -0.02em; font-weight: 700; }
+h2 { margin: 0 0 8px; font: 500 0.68rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--txt3); }
+.cifras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cifras div { border: 1px solid var(--linea); border-radius: 12px; padding: 10px 8px; text-align: center; }
+.cifras b { display: block; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; }
+.cifras small { color: var(--txt3); font-size: 0.68rem; }
+.chip { display: flex; align-items: center; gap: 9px; width: 100%; border: 1px solid var(--linea); background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 8px 10px; text-align: left; font-size: 0.82rem; font-weight: 500; transition: opacity 0.2s, border-color 0.2s, background 0.2s; }
+.chip:hover { border-color: var(--linea2); background: rgba(255, 255, 255, 0.06); }
+.chip[aria-pressed='false'] { opacity: 0.38; }
+.chip i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.chip i.l { border-radius: 3px; height: 4px; width: 16px; }
+.chip span { flex: 1; min-width: 0; }
+.chip em { font: 500 0.72rem var(--mono); color: var(--txt3); font-style: normal; }
+.lista { display: flex; flex-direction: column; gap: 5px; }
+.rejilla { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.rejilla .chip { padding: 7px 8px; font-size: 0.76rem; }
+.nota { font-size: 0.7rem; line-height: 1.45; color: var(--txt3); }
+.hub { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: 0; border-top: 1px solid var(--linea); padding: 8px 2px; text-align: left; font-size: 0.8rem; }
+.hub:hover { color: var(--acento); }
+.hub i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.hub span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub em { font: 500 0.72rem var(--mono); color: var(--txt3); font-style: normal; }
+
+.cerrar { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--linea); background: none; color: var(--txt2); }
+.cerrar:hover { color: var(--txt); border-color: var(--linea2); }
+#der h3 { margin: 6px 28px 10px 0; font-size: 1.35rem; line-height: 1.12; letter-spacing: -0.025em; font-weight: 700; }
+.badge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--linea2); border-radius: 999px; padding: 3px 10px; font: 500 0.7rem var(--mono); color: var(--txt2); margin: 0 6px 6px 0; }
+.badge i { width: 8px; height: 8px; border-radius: 50%; }
+.campo { margin-top: 14px; }
+.campo p { margin: 4px 0 0; font-size: 0.88rem; line-height: 1.5; color: #d6dee6; }
+.rel { display: block; width: 100%; background: none; border: 0; border-top: 1px solid var(--linea); padding: 9px 0; text-align: left; }
+.rel:hover .rn { color: var(--acento); }
+.rel .tg { display: inline-block; font: 600 0.62rem var(--mono); letter-spacing: 0.06em; padding: 2px 6px; border-radius: 5px; color: #000; margin-right: 6px; }
+.rel .rn { font-size: 0.86rem; font-weight: 600; }
+.rel .rl { display: block; margin-top: 3px; font-size: 0.76rem; line-height: 1.4; color: var(--txt2); }
+select { width: 100%; height: 38px; margin-top: 6px; border-radius: 10px; background: #0a0f14; color: var(--txt); border: 1px solid var(--linea2); padding: 0 10px; font: 500 0.82rem var(--sans); }
+.paso { display: flex; gap: 8px; align-items: baseline; font-size: 0.8rem; padding: 4px 0; }
+.paso b { font: 500 0.7rem var(--mono); color: var(--acento); }
+
+#pista { position: fixed; z-index: 8; left: 50%; bottom: 14px; transform: translateX(-50%); padding: 8px 14px; font-size: 0.75rem; color: var(--txt2); border-radius: 999px; white-space: nowrap; pointer-events: none; transition: opacity 0.6s; }
+#tip { position: fixed; z-index: 11; pointer-events: none; padding: 7px 10px; border-radius: 10px; font-size: 0.78rem; max-width: 260px; display: none; line-height: 1.35; }
+#tip b { display: block; font-weight: 700; }
+#tip span { color: var(--txt2); font-size: 0.72rem; }
+
+@media (max-width: 860px) {
+  #izq { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; max-height: 56vh; display: none; }
+  #izq.on { display: flex; animation: entra 0.3s ease; }
+  #der { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; max-height: 52vh; }
+  #btnFiltros { display: block; }
+  .marca span.ocul, .marca .sub { display: none; }
+  #top { flex-wrap: wrap; }
+  .buscar { order: 3; flex: 1 1 100%; max-width: none; }
+  .seg { order: 2; }
+  .seg button { padding: 0 9px; }
+  #pista { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { #der.on, #izq.on { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Red de actores de Bavaria Común: arrastra los nodos, acerca con la rueda o pellizcando, toca un actor para ver sus relaciones"></canvas>
+
+<header id="top">
+  <div class="panel marca"><i></i>Red de <span>actores</span></div>
+  <div class="buscar">
+    <input id="q" type="search" placeholder="Buscar actor, rol o entidad…" autocomplete="off" aria-label="Buscar actor" />
+    <div id="res" class="panel" role="listbox"></div>
+  </div>
+  <div class="panel seg" role="group" aria-label="Disposición">
+    <button data-lay="fuerza" aria-pressed="true">Fuerza</button>
+    <button data-lay="grupos" aria-pressed="false">Grupos</button>
+    <button data-lay="anillos" aria-pressed="false">Anillos</button>
+  </div>
+  <span class="espacio"></span>
+  <button id="btnFlujo" class="btn" aria-pressed="true" title="Partículas que viajan por cada relación">Flujo</button>
+  <button id="btnVista" class="btn" title="Ajustar la vista a toda la red">Ajustar</button>
+  <button id="btnFiltros" class="btn" aria-pressed="false">Filtros</button>
+</header>
+
+<aside id="izq" class="panel" aria-label="Filtros y leyenda">
+  <div>
+    <h1>Actores y relaciones de Bavaria Común</h1>
+    <p class="nota" style="margin:8px 0 0">Red construida en Gephi. Cada punto es un actor; cada línea, una relación con dirección (de quien actúa hacia quien recibe).</p>
+  </div>
+  <div class="cifras" id="cifras"></div>
+  <div><h2>Redes</h2><div class="lista" id="redes"></div></div>
+  <div><h2>Tipo de relación</h2><div class="rejilla" id="tags"></div>
+    <button class="chip" id="agrega" aria-pressed="true" style="margin-top:6px"><i class="l" style="background:#78909c"></i><span>Mostrar «Agrupa a»</span><em id="nAgr"></em></button>
+  </div>
+  <div><h2>Más conectados</h2><div id="hubs"></div></div>
+  <p class="nota">Tamaño del punto = número de relaciones. Los nombres de las redes y de los tipos de relación son descriptivos, deducidos de los códigos y de los actores del archivo (OG, OE1–OE3; ALI, DIN, GOB…). Dirección de cada relación: fuente → destino, tal como está en el archivo.</p>
+</aside>
+
+<aside id="der" class="panel" aria-live="polite"></aside>
+<div id="pista" class="panel">Arrastra un punto · rueda o pellizco para acercar · toca un actor para ver sus relaciones</div>
+<div id="tip" class="panel"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+const DATA = __DATA__;
+
+/* ---------- vocabulario ---------- */
+const REDES = {
+  OG: { nombre: 'Agentes agregados', color: '#f2b84b' },
+  OE1: { nombre: 'Gobernanza y comunidad', color: '#4fb6b0' },
+  OE2: { nombre: 'Cadena alimentaria y huertas', color: '#9ccc65' },
+  OE3: { nombre: 'Ambiente y fauna', color: '#6ea8ff' },
+};
+const TAGS = {
+  ALI: ['Alimento', '#ffb74d'], DIN: ['Dinero', '#4dd0a0'], GOB: ['Gobernanza', '#b39ddb'], VOT: ['Voto', '#f06292'],
+  FOR: ['Formación', '#64b5f6'], RET: ['Retorno de información', '#4dd0e1'], AUT: ['Autorización', '#ff8a65'], RES: ['Residuos', '#a1887f'],
+  MAT: ['Materiales', '#aed581'], HAB: ['Hábitat', '#81c784'], POL: ['Polinización', '#fff176'], MON: ['Monitoreo', '#90caf9'],
+  INF: ['Información', '#e0e0e0'], AMB: ['Ambiental', '#ba68c8'], AGR: ['Agrupa a', '#78909c'],
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const $ = (id) => document.getElementById(id);
+
+/* ---------- datos ---------- */
+const nodes = DATA.nodos.map((n) => ({ ...n }));
+const byId = new Map(nodes.map((n) => [n.id, n]));
+const links = DATA.aristas.map((a) => ({ ...a, source: byId.get(a.fuenteId), target: byId.get(a.destinoId) })).filter((l) => l.source && l.target);
+nodes.forEach((n) => { n.out = []; n.in = []; });
+links.forEach((l, i) => { l.i = i; l.source.out.push(l); l.target.in.push(l); });
+nodes.forEach((n) => { n.grado = n.out.length + n.in.length; n.r = 5 + Math.sqrt(n.grado) * 2.1 + (n.red === 'OG' ? 3 : 0); n.color = REDES[n.red]?.color || '#fff'; });
+// curvatura: relaciones recíprocas o repetidas entre el mismo par se separan
+{ const g = new Map(); links.forEach((l) => { const k = l.source.id + '>' + l.target.id; g.set(k, (g.get(k) || 0) + 1); l.curv = 0.1 + 0.16 * (g.get(k) - 1); }); }
+const adyacentes = new Map(nodes.map((n) => [n.id, new Set()]));
+links.forEach((l) => { adyacentes.get(l.source.id).add(l.target.id); adyacentes.get(l.target.id).add(l.source.id); });
+const topN = [...nodes].sort((a, b) => b.grado - a.grado);
+const umbralEtiqueta = topN[Math.min(13, topN.length - 1)].grado;
+
+/* ---------- estado ---------- */
+const S = { hover: null, sel: null, selLink: null, redOn: { OG: true, OE1: true, OE2: true, OE3: true }, tagOn: Object.fromEntries(Object.keys(TAGS).map((k) => [k, true])), agrega: true, flujo: true, layout: 'fuerza', camino: null, t0: performance.now() };
+const visN = (n) => S.redOn[n.red];
+const visL = (l) => visN(l.source) && visN(l.target) && S.tagOn[l.tag] && (l.tipo_conexion !== 'AGREGA' || S.agrega);
+
+/* ---------- lienzo y zoom ---------- */
+const cv = $('c'); const ctx = cv.getContext('2d');
+let W = 0; let H = 0; let DPR = 1; let T = d3.zoomIdentity;
+const resize = () => { DPR = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight; cv.width = W * DPR; cv.height = H * DPR; };
+addEventListener('resize', () => { resize(); });
+resize();
+const zoom = d3.zoom().scaleExtent([0.2, 7]).filter((e) => e.type === 'wheel' || e.type === 'dblclick' ? true : !hit(e)).on('zoom', (e) => { T = e.transform; });
+d3.select(cv).call(zoom).on('dblclick.zoom', null);
+const mundo = (e) => { const r = cv.getBoundingClientRect(); const p = [e.clientX ?? e.touches?.[0]?.clientX, e.clientY ?? e.touches?.[0]?.clientY]; return T.invert([p[0] - r.left, p[1] - r.top]); };
+const buscarNodo = (x, y) => { let best = null; let bd = 1e9; nodes.forEach((n) => { if (!visN(n)) return; const d = Math.hypot(n.x - x, n.y - y); if (d < n.r + 6 / T.k && d < bd) { bd = d; best = n; } }); return best; };
+const hit = (e) => { const [x, y] = mundo(e); return buscarNodo(x, y); };
+function ajustar(animar = true) {
+  const vis = nodes.filter(visN); if (!vis.length) return;
+  const x0 = d3.min(vis, (n) => n.x - n.r); const x1 = d3.max(vis, (n) => n.x + n.r); const y0 = d3.min(vis, (n) => n.y - n.r); const y1 = d3.max(vis, (n) => n.y + n.r);
+  const izq = innerWidth > 860 ? 320 : 0; const der = innerWidth > 860 && S.sel ? 360 : 0; const arriba = innerWidth > 860 ? 70 : 120;
+  const aw = W - izq - der - 40; const ah = H - arriba - 30;
+  const k = Math.min(aw / (x1 - x0), ah / (y1 - y0), 3);
+  const tx = izq + 20 + aw / 2 - ((x0 + x1) / 2) * k; const ty = arriba + ah / 2 - ((y0 + y1) / 2) * k;
+  const t = d3.zoomIdentity.translate(tx, ty).scale(k);
+  const sel = d3.select(cv); animar ? sel.transition().duration(900).ease(d3.easeCubicInOut).call(zoom.transform, t) : sel.call(zoom.transform, t);
+}
+function irA(n) {
+  const k = Math.max(T.k, 1.6);
+  const izq = innerWidth > 860 ? 320 : 0; const der = innerWidth > 860 ? 360 : 0;
+  const cx = izq + (W - izq - der) / 2; const cy = innerWidth > 860 ? H / 2 : H * 0.35;
+  d3.select(cv).transition().duration(800).ease(d3.easeCubicInOut).call(zoom.transform, d3.zoomIdentity.translate(cx - n.x * k, cy - n.y * k).scale(k));
+}
+
+/* ---------- simulación ---------- */
+const CENTROS = { OG: [0, 0], OE1: [-330, -150], OE2: [300, -60], OE3: [-40, 330] };
+const RADIOS = { OG: 80, OE1: 250, OE2: 400, OE3: 540 };
+const fLink = d3.forceLink(links).id((d) => d.id);
+const fX = d3.forceX(0); const fY = d3.forceY(0); const fRad = d3.forceRadial(1, 0, 0);
+const sim = d3.forceSimulation(nodes).force('link', fLink).force('charge', d3.forceManyBody().strength(-360).distanceMax(750)).force('x', fX).force('y', fY).force('collide', d3.forceCollide((d) => d.r + 9)).alphaDecay(0.02).velocityDecay(0.32);
+function disponer(modo) {
+  S.layout = modo;
+  fLink.distance((l) => (l.tipo_conexion === 'AGREGA' ? 150 : l.tipo_conexion === 'PUENTE' ? 175 : 95)).strength((l) => (modo === 'fuerza' ? (l.tipo_conexion === 'AGREGA' ? 0.1 : 0.34) : 0.02));
+  if (modo === 'grupos') { fX.x((d) => CENTROS[d.red][0]).strength(0.14); fY.y((d) => CENTROS[d.red][1]).strength(0.14); sim.force('radial', null); }
+  else if (modo === 'anillos') { fX.strength(0); fY.strength(0); fRad.radius((d) => RADIOS[d.red]).strength(0.95); sim.force('radial', fRad); }
+  else { fX.x(0).strength(0.03); fY.y(0).strength(0.03); sim.force('radial', null); }
+  sim.alpha(0.95).restart();
+  setTimeout(() => ajustar(), 900);
+  document.querySelectorAll('[data-lay]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lay === modo)));
+}
+for (let i = 0; i < 260; i++) sim.tick();
+ajustar(false);
+sim.alpha(0.2).restart();
+
+/* ---------- arrastre de nodos ---------- */
+d3.select(cv).call(d3.drag().container(cv).subject((e) => { const [x, y] = T.invert([e.x, e.y]); const n = buscarNodo(x, y); if (n) { n.fx = n.x; n.fy = n.y; } return n ? { x: e.x, y: e.y, nodo: n } : null; })
+  .on('start', (e) => { cv.classList.add('arrastra'); sim.alphaTarget(0.25).restart(); e.subject.nodo.mov = false; })
+  .on('drag', (e) => { const [x, y] = T.invert([e.x, e.y]); e.subject.nodo.fx = x; e.subject.nodo.fy = y; e.subject.nodo.mov = true; })
+  .on('end', (e) => { cv.classList.remove('arrastra'); sim.alphaTarget(0); const n = e.subject.nodo; n.fx = null; n.fy = null; if (!n.mov) seleccionar(n); }));
+
+/* ---------- geometría de los arcos ---------- */
+function ctrl(l) { const a = l.source; const b = l.target; const mx = (a.x + b.x) / 2; const my = (a.y + b.y) / 2; const dx = b.x - a.x; const dy = b.y - a.y; return [mx - dy * l.curv, my + dx * l.curv]; }
+function pt(l, t, c) { const a = l.source; const b = l.target; const u = 1 - t; return [u * u * a.x + 2 * u * t * c[0] + t * t * b.x, u * u * a.y + 2 * u * t * c[1] + t * t * b.y]; }
+function distLink(l, x, y) { const c = ctrl(l); let m = 1e9; for (let t = 0; t <= 1; t += 0.05) { const p = pt(l, t, c); m = Math.min(m, Math.hypot(p[0] - x, p[1] - y)); } return m; }
+
+/* ---------- dibujo ---------- */
+const hex = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+function foco() { return S.sel || S.hover; }
+function dibujar(now) {
+  const t = (now - S.t0) / 1000;
+  const intro = Math.min(1, t / 1.4); const ie = 1 - Math.pow(1 - intro, 3);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.save(); ctx.translate(T.x, T.y); ctx.scale(T.k, T.k);
+  const f = foco(); const camino = S.camino; const enC = camino ? new Set(camino.nodos) : null; const enE = camino ? new Set(camino.aristas) : null;
+  const vecinos = f ? adyacentes.get(f.id) : null;
+  const linkActivo = (l) => (S.selLink ? l === S.selLink : f ? l.source === f || l.target === f : false);
+  // aristas
+  links.forEach((l) => {
+    if (!visL(l)) return;
+    const act = linkActivo(l); const pc = enE?.has(l.i);
+    let al = 0.5; if (S.selLink) al = act ? 1 : 0.05; else if (camino) al = pc ? 1 : 0.05; else if (f) al = act ? 1 : 0.05;
+    if (l.tipo_conexion === 'AGREGA' && !act && !pc) al *= 0.45;
+    al *= ie;
+    const c = ctrl(l); const col = TAGS[l.tag]?.[1] || '#fff';
+    ctx.beginPath(); ctx.moveTo(l.source.x, l.source.y); ctx.quadraticCurveTo(c[0], c[1], l.target.x, l.target.y);
+    ctx.strokeStyle = pc ? '#ffffff' : hex(col, al * (l.tipo_conexion === 'AGREGA' ? 0.8 : 0.9));
+    ctx.lineWidth = (pc ? 2.6 : act ? 2 : l.tipo_conexion === 'AGREGA' ? 0.7 : 1.2) / Math.sqrt(T.k) ;
+    if (l.tipo_conexion === 'AGREGA' && !act && !pc) ctx.setLineDash([3 / T.k, 4 / T.k]); else ctx.setLineDash([]);
+    ctx.stroke(); ctx.setLineDash([]);
+    // flecha
+    const len = Math.hypot(l.target.x - l.source.x, l.target.y - l.source.y) || 1;
+    const t1 = Math.max(0.05, 1 - (l.target.r + 3) / len); const p = pt(l, t1, c); const q = pt(l, Math.min(1, t1 + 0.03), c);
+    const ang = Math.atan2(q[1] - p[1], q[0] - p[0]); const s = (act || pc ? 7 : 5) / Math.sqrt(T.k);
+    ctx.beginPath(); ctx.moveTo(p[0] + Math.cos(ang) * s, p[1] + Math.sin(ang) * s); ctx.lineTo(p[0] + Math.cos(ang + 2.5) * s * 0.9, p[1] + Math.sin(ang + 2.5) * s * 0.9); ctx.lineTo(p[0] + Math.cos(ang - 2.5) * s * 0.9, p[1] + Math.sin(ang - 2.5) * s * 0.9); ctx.closePath();
+    ctx.fillStyle = pc ? '#fff' : hex(col, Math.min(1, al + 0.15)); ctx.fill();
+  });
+  // partículas de flujo
+  if (S.flujo) {
+    links.forEach((l) => {
+      if (!visL(l)) return; const act = linkActivo(l); const pc = enE?.has(l.i);
+      if (l.tipo_conexion === 'AGREGA' && !act && !pc) return;
+      if ((f || camino || S.selLink) && !act && !pc) return;
+      const c = ctrl(l); const col = TAGS[l.tag]?.[1] || '#fff'; const n = act || pc ? 3 : 1; const v = 0.16 + ((l.i * 37) % 10) * 0.014;
+      for (let k = 0; k < n; k++) {
+        const u = ((t * v + (l.i * 0.137) + k / n) % 1);
+        const p = pt(l, u, c);
+        ctx.beginPath(); ctx.arc(p[0], p[1], (act || pc ? 2.4 : 1.7) / Math.sqrt(T.k), 0, 6.283);
+        ctx.fillStyle = pc ? '#fff' : hex(col, 0.95 * ie); ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
+      }
+    });
+  }
+  // nodos
+  nodes.forEach((n) => {
+    if (!visN(n)) return;
+    let al = 1;
+    if (S.selLink) al = (n === S.selLink.source || n === S.selLink.target) ? 1 : 0.14;
+    else if (camino) al = enC.has(n.id) ? 1 : 0.14;
+    else if (f) al = (n === f || vecinos.has(n.id)) ? 1 : 0.16;
+    const r = n.r * (0.4 + 0.6 * ie) * (n === S.hover ? 1.18 : 1);
+    ctx.globalAlpha = al * ie;
+    if (n === f || n === S.sel || (camino && enC.has(n.id))) { ctx.shadowColor = n.color; ctx.shadowBlur = 22; }
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 6.283); ctx.fillStyle = n.color; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.6 / T.k; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.stroke();
+    if (n.red === 'OG') { ctx.beginPath(); ctx.arc(n.x, n.y, r + 3.5 / T.k + 2, 0, 6.283); ctx.strokeStyle = hex(n.color, 0.7); ctx.lineWidth = 1.3 / T.k; ctx.stroke(); }
+    if (n === S.sel) { const p = (t * 0.8) % 1; ctx.beginPath(); ctx.arc(n.x, n.y, r + 4 + p * 16, 0, 6.283); ctx.strokeStyle = hex(n.color, 0.7 * (1 - p)); ctx.lineWidth = 2 / T.k; ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  });
+  // etiquetas
+  const fs = 12 / T.k; ctx.font = `600 ${fs}px Inter, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  nodes.forEach((n) => {
+    if (!visN(n)) return;
+    const enfoque = f && (n === f || vecinos.has(n.id)); const enCam = camino && enC.has(n.id);
+    const mostrar = enfoque || enCam || (!f && !camino && (T.k > 1.5 || n.grado >= umbralEtiqueta));
+    if (!mostrar || (S.selLink && n !== S.selLink.source && n !== S.selLink.target)) return;
+    let txt = n.label; const max = enfoque || enCam || T.k > 2.5 ? 60 : 30; if (txt.length > max) txt = txt.slice(0, max - 1) + '…';
+    ctx.globalAlpha = ie; ctx.lineWidth = 4 / T.k; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineJoin = 'round'; ctx.strokeText(txt, n.x, n.y + n.r + 4 / T.k + 2);
+    ctx.fillStyle = '#f1f5f9'; ctx.fillText(txt, n.x, n.y + n.r + 4 / T.k + 2); ctx.globalAlpha = 1;
+  });
+  ctx.restore();
+}
+let activo = true;
+document.addEventListener('visibilitychange', () => { activo = !document.hidden; });
+(function bucle(now) { requestAnimationFrame(bucle); if (activo) dibujar(now); })(performance.now());
+
+/* ---------- interacción ---------- */
+const tip = $('tip');
+cv.addEventListener('pointermove', (e) => {
+  if (e.buttons) { tip.style.display = 'none'; return; }
+  const [x, y] = mundo(e); const n = buscarNodo(x, y);
+  S.hover = n; cv.classList.toggle('sobre', !!n || !!buscarArista(x, y));
+  if (n) { tip.innerHTML = `<b>${esc(n.label)}</b><span>${esc(n.id)} · ${esc(REDES[n.red].nombre)} · ${n.grado} relaciones</span>`; tip.style.display = 'block'; tip.style.left = Math.min(e.clientX + 14, innerWidth - 270) + 'px'; tip.style.top = e.clientY + 14 + 'px'; }
+  else tip.style.display = 'none';
+});
+cv.addEventListener('pointerleave', () => { S.hover = null; tip.style.display = 'none'; });
+function buscarArista(x, y) { let best = null; let bd = 8 / T.k; links.forEach((l) => { if (!visL(l)) return; const d = distLink(l, x, y); if (d < bd) { bd = d; best = l; } }); return best; }
+cv.addEventListener('click', (e) => {
+  if (hit(e)) return; // el nodo se gestiona en el arrastre
+  const [x, y] = mundo(e); const l = buscarArista(x, y);
+  if (l) { S.selLink = l; S.sel = null; S.camino = null; panelArista(l); } else limpiar();
+});
+addEventListener('keydown', (e) => { if (e.key === 'Escape') limpiar(); });
+function limpiar() { S.sel = null; S.selLink = null; S.camino = null; $('der').classList.remove('on'); }
+function seleccionar(n) { S.sel = n; S.selLink = null; S.camino = null; panelNodo(n); irA(n); $('pista').style.opacity = 0; }
+
+/* ---------- paneles ---------- */
+const chipTag = (tag) => `<span class="tg" style="background:${TAGS[tag]?.[1] || '#fff'}">${esc(tag)}</span>`;
+function relHTML(l, otro, dir) { return `<button class="rel" data-id="${esc(otro.id)}">${chipTag(l.tag)}<span class="rn">${dir} ${esc(otro.label)}</span><span class="rl">${esc(l.label)}${l.fuente ? ' · <i>' + esc(l.fuente) + '</i>' : ''}</span></button>`; }
+function panelNodo(n) {
+  const sal = n.out.filter(visL); const ent = n.in.filter(visL);
+  const lista = nodes.filter((m) => m !== n && visN(m)).sort((a, b) => a.label.localeCompare(b.label, 'es'));
+  $('der').innerHTML = `<button class="cerrar" aria-label="Cerrar">✕</button>
+    <p class="etq">${esc(n.id)} · ${esc(n.nivel)}</p><h3>${esc(n.label)}</h3>
+    <span class="badge"><i style="background:${n.color}"></i>${esc(n.red)} · ${esc(REDES[n.red].nombre)}</span><span class="badge">${n.grado} ${n.grado === 1 ? 'relación' : 'relaciones'}</span>
+    ${n.tipo_agente ? `<div class="campo"><span class="etq">Tipo de agente</span><p>${esc(n.tipo_agente)}</p></div>` : ''}
+    ${n.decide ? `<div class="campo"><span class="etq">Qué decide o aporta</span><p>${esc(n.decide)}</p></div>` : ''}
+    ${n.estado ? `<div class="campo"><span class="etq">Estado del dato</span><p>${esc(n.estado)}</p></div>` : ''}
+    ${n.espacio_ref || n.id_matriz ? `<div class="campo"><span class="etq">Referencias</span><p>${[n.espacio_ref && 'Espacio ' + esc(n.espacio_ref), n.id_matriz && 'Matriz ' + esc(n.id_matriz)].filter(Boolean).join(' · ')}</p></div>` : ''}
+    <div class="campo"><span class="etq">Camino más corto hacia…</span><select id="selCamino"><option value="">Elegir un actor</option>${lista.map((m) => `<option value="${esc(m.id)}">${esc(m.label.slice(0, 70))}</option>`).join('')}</select><div id="pasos"></div></div>
+    <div class="campo"><span class="etq">Salen ${sal.length}</span>${sal.map((l) => relHTML(l, l.target, '→')).join('') || '<p class="nota">Ninguna con los filtros actuales.</p>'}</div>
+    <div class="campo"><span class="etq">Llegan ${ent.length}</span>${ent.map((l) => relHTML(l, l.source, '←')).join('') || '<p class="nota">Ninguna con los filtros actuales.</p>'}</div>`;
+  $('der').classList.add('on'); $('der').scrollTop = 0; enlazarPanel();
+  $('selCamino').onchange = (e) => { if (e.target.value) trazar(n, byId.get(e.target.value)); else { S.camino = null; $('pasos').innerHTML = ''; } };
+}
+function panelArista(l) {
+  $('der').innerHTML = `<button class="cerrar" aria-label="Cerrar">✕</button><p class="etq">Relación ${esc(l.id)}</p><h3>${esc(l.label)}</h3>
+    <span class="badge" style="border-color:${TAGS[l.tag]?.[1]}">${esc(TAGS[l.tag]?.[0] || l.tag)} · ${esc(l.tag)}</span>${l.tipo_conexion ? `<span class="badge">${esc(l.tipo_conexion === 'AGREGA' ? 'Agrupación' : 'Puente entre redes')}</span>` : ''}
+    <div class="campo"><span class="etq">De</span><button class="rel" data-id="${esc(l.source.id)}"><span class="rn">${esc(l.source.label)}</span><span class="rl">${esc(l.source.red)} · ${esc(REDES[l.source.red].nombre)}</span></button></div>
+    <div class="campo"><span class="etq">Hacia</span><button class="rel" data-id="${esc(l.target.id)}"><span class="rn">${esc(l.target.label)}</span><span class="rl">${esc(l.target.red)} · ${esc(REDES[l.target.red].nombre)}</span></button></div>
+    ${l.estado ? `<div class="campo"><span class="etq">Estado</span><p>${esc(l.estado)}</p></div>` : ''}${l.fuente ? `<div class="campo"><span class="etq">Fuente</span><p>${esc(l.fuente)}</p></div>` : ''}`;
+  $('der').classList.add('on'); enlazarPanel();
+}
+function enlazarPanel() {
+  $('der').querySelector('.cerrar').onclick = limpiar;
+  $('der').querySelectorAll('.rel[data-id]').forEach((b) => { b.onclick = () => seleccionar(byId.get(b.dataset.id)); });
+}
+function trazar(a, b) {
+  // camino más corto sin dirección sobre las relaciones visibles
+  const prev = new Map([[a.id, null]]); const cola = [a.id];
+  while (cola.length) { const u = cola.shift(); if (u === b.id) break; links.forEach((l) => { if (!visL(l)) return; const o = l.source.id === u ? l.target.id : l.target.id === u ? l.source.id : null; if (o && !prev.has(o)) { prev.set(o, { de: u, l }); cola.push(o); } }); }
+  if (!prev.has(b.id)) { S.camino = null; $('pasos').innerHTML = '<p class="nota">No hay camino con los filtros actuales.</p>'; return; }
+  const ns = []; const as = []; let c = b.id; while (c) { ns.unshift(c); const p = prev.get(c); if (p) as.unshift(p.l.i); c = p?.de; }
+  S.camino = { nodos: ns, aristas: as };
+  $('pasos').innerHTML = `<p class="nota" style="margin:8px 0 4px">${ns.length - 1} ${ns.length - 1 === 1 ? 'paso' : 'pasos'}</p>` + ns.map((id, i) => `<div class="paso"><b>${i + 1}</b><span>${esc(byId.get(id).label)}</span></div>`).join('');
+}
+
+/* ---------- barra izquierda ---------- */
+$('cifras').innerHTML = `<div><b>${nodes.length}</b><small>actores</small></div><div><b>${links.length}</b><small>relaciones</small></div><div><b>4</b><small>redes</small></div>`;
+$('redes').innerHTML = Object.entries(REDES).map(([k, v]) => `<button class="chip" data-red="${k}" aria-pressed="true"><i style="background:${v.color}"></i><span>${v.nombre}</span><em>${nodes.filter((n) => n.red === k).length}</em></button>`).join('');
+const cuentaTag = {}; links.forEach((l) => { cuentaTag[l.tag] = (cuentaTag[l.tag] || 0) + 1; });
+$('tags').innerHTML = Object.entries(TAGS).filter(([k]) => k !== 'AGR').map(([k, v]) => `<button class="chip" data-tag="${k}" aria-pressed="true"><i class="l" style="background:${v[1]}"></i><span>${v[0]}</span><em>${cuentaTag[k] || 0}</em></button>`).join('');
+$('nAgr').textContent = cuentaTag.AGR || 0;
+$('hubs').innerHTML = topN.slice(0, 8).map((n) => `<button class="hub" data-id="${esc(n.id)}"><i style="background:${n.color}"></i><span>${esc(n.label)}</span><em>${n.grado}</em></button>`).join('');
+document.querySelectorAll('[data-red]').forEach((b) => { b.onclick = () => { const k = b.dataset.red; S.redOn[k] = !S.redOn[k]; b.setAttribute('aria-pressed', String(S.redOn[k])); if (S.sel && !visN(S.sel)) limpiar(); S.camino = null; }; });
+document.querySelectorAll('[data-tag]').forEach((b) => { b.onclick = () => { const k = b.dataset.tag; S.tagOn[k] = !S.tagOn[k]; b.setAttribute('aria-pressed', String(S.tagOn[k])); S.camino = null; if (S.sel) panelNodo(S.sel); }; });
+$('agrega').onclick = (e) => { S.agrega = !S.agrega; e.currentTarget.setAttribute('aria-pressed', String(S.agrega)); S.tagOn.AGR = S.agrega; };
+document.querySelectorAll('.hub').forEach((b) => { b.onclick = () => seleccionar(byId.get(b.dataset.id)); });
+document.querySelectorAll('[data-lay]').forEach((b) => { b.onclick = () => disponer(b.dataset.lay); });
+$('btnFlujo').onclick = (e) => { S.flujo = !S.flujo; e.currentTarget.setAttribute('aria-pressed', String(S.flujo)); };
+$('btnVista').onclick = () => { ajustar(); };
+$('btnFiltros').onclick = (e) => { const on = $('izq').classList.toggle('on'); e.currentTarget.setAttribute('aria-pressed', String(on)); };
+
+/* ---------- búsqueda ---------- */
+const q = $('q'); const res = $('res');
+q.addEventListener('input', () => {
+  const t = norm(q.value.trim()); if (!t) { res.style.display = 'none'; return; }
+  const r = nodes.filter((n) => norm(n.label + ' ' + n.id + ' ' + n.tipo_agente).includes(t)).slice(0, 8);
+  res.innerHTML = r.map((n) => `<button data-id="${esc(n.id)}"><i style="width:9px;height:9px;border-radius:50%;background:${n.color};flex:none"></i><span>${esc(n.label)}</span></button>`).join('') || '<p class="nota" style="padding:8px">Sin resultados</p>';
+  res.style.display = 'block';
+  res.querySelectorAll('button').forEach((b) => { b.onclick = () => { seleccionar(byId.get(b.dataset.id)); q.value = ''; res.style.display = 'none'; q.blur(); }; });
+});
+q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = res.querySelector('button'); if (b) b.click(); } if (e.key === 'Escape') { q.value = ''; res.style.display = 'none'; } });
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.buscar')) res.style.display = 'none'; });
+setTimeout(() => { $('pista').style.opacity = 0; }, 9000);
+if (innerWidth > 860) { /* panel izquierdo visible en pantallas anchas */ }
+</script>
+</body>
+</html>

@@ -46,3 +46,8 @@ Red de especies de la isla de Tierra Bomba (Cartagena) con su materialización s
 Sitio: https://anasoficasca-code.github.io/tierrabomba/
 
 Abrir directamente en el territorio: https://anasoficasca-code.github.io/tierrabomba/?territorio
+
+
+## Red de actores de Bavaria Común
+
+Visor interactivo (fondo negro) de la red de actores exportada desde Gephi: https://alejagoguti-cpu.github.io/tesis_tercer_corte/red/ . 57 actores y 120 relaciones. El archivo .gephi guarda el grafo en binario; ed/fuente/leer.mjs lo lee y escribe ed.json, y plantilla.html es la página (d3-force sobre canvas) que se rellena con esos datos. La dirección de cada relación es fuente → destino tal como está en el archivo; los nombres de las redes (OG, OE1–OE3) y de los tipos de relación son descriptivos, deducidos de los códigos y de los actores.
