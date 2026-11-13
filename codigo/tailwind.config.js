@@ -2,10 +2,10 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
-      colors: { tinta: '#050607', papel: '#f6f5f3', arcilla: '#cfff5e', mar: '#0e1112' },
+      colors: { tinta: '#0b1015', papel: '#f4f1ec', arcilla: '#c86d51', mar: '#113542' },
       fontFamily: {
-        sans: ['Geist', 'system-ui', 'sans-serif'],
-        mono: ['Geist Mono', 'ui-monospace', 'monospace'],
+        sans: ['Space Grotesk', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
     },
   },
