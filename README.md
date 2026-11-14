@@ -51,3 +51,11 @@ Abrir directamente en el territorio: https://anasoficasca-code.github.io/tierrab
 ## Red de actores de Bavaria Común
 
 Visor interactivo (fondo negro) de la red de actores exportada desde Gephi: https://alejagoguti-cpu.github.io/tesis_tercer_corte/red/ . 57 actores y 120 relaciones. El archivo .gephi guarda el grafo en binario; ed/fuente/leer.mjs lo lee y escribe ed.json, y plantilla.html es la página (d3-force sobre canvas) que se rellena con esos datos. La dirección de cada relación es fuente → destino tal como está en el archivo; los nombres de las redes (OG, OE1–OE3) y de los tipos de relación son descriptivos, deducidos de los códigos y de los actores.
+
+
+## Erosión e inundación con datos oficiales (MIDAS e INVEMAR)
+
+El escenario por defecto del capítulo 3 usa las capas de cambio climático de MIDAS (Alcaldía de Cartagena, https://midas.cartagena.gov.co; Secretaría de Planeación - INVEMAR - CDKN 2014), consultadas el 2026-11-14 por su servicio WFS y guardadas en `datos/midas_tierrabomba.json`.
+
+- Erosión: cada tramo de costa retrocede según su amenaza por erosión en MIDAS (INVEMAR 2011). INVEMAR midió en Tierra Bomba un retroceso promedio de 0,63 m/año y máximo de 3 m/año (fotografías aéreas 1994-2011; INVEMAR-MADS-Alcaldía-CDKN 2012, Lineamientos de adaptación al cambio climático para Cartagena de Indias, p. 20). Tasas usadas por clase: muy alta 3, alta 1,5, moderada 0,63, baja 0,3 m/año; los valores intermedios son una asignación de esta presentación entre el promedio y el máximo medidos.
+- Zona inundable: las capas «Inundación moderada» (escenario 2019) e «Inundación fuerte» (escenario 2040) de MIDAS (años según INVEMAR et al. 2012, p. 24). Sobre Tierra Bomba las dos coinciden (unas 246 ha) y llegan a terrenos de varios metros en el relieve usado: se muestran como amenaza por eventos, rayadas en azul, y no se cuentan como tierra perdida.

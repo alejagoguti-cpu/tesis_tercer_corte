@@ -17,7 +17,17 @@ import { MESETA, ESCUELA, VIVIENDAS, PARQUE, HUMEDAL, VIAS, CORREDORES, PROGRAMA
 //  - vías OSM en 3D coloreadas con los resultados de sintaxis espacial (sintaxis.json)
 // =============================================================================
 
-export const TASA = 1.8; // m/año: retroceso del borde (tasa máxima registrada en el proyecto)
+// Erosión medida en Tierra Bomba (fotografías aéreas 1994–2011): retroceso promedio 0,63 m/año y máximo 3 m/año
+// (INVEMAR-MADS-Alcaldía de Cartagena-CDKN, 2012, Lineamientos de adaptación al cambio climático para Cartagena, p. 20).
+export const TASA_MEDIA = 0.63;
+export const TASA_MAX = 3.0;
+// Cada tramo de costa toma una tasa según su amenaza por erosión en MIDAS (INVEMAR 2011). INVEMAR da el promedio y el
+// máximo, no una tasa por clase: los valores intermedios son una asignación de esta presentación entre esos dos extremos.
+export const TASA_CLASE = { 'Muy Alta': 3.0, Alta: 1.5, Moderada: 0.63, Baja: 0.3, 'Muy Baja': 0.15, SD: 0.63 };
+export const TASA = TASA_MEDIA; // tramos de costa sin clase en MIDAS
+export const AÑO_BASE = 2025; // «hoy» del modelo
+export const COLOR_CLASE_EROSION = { 'Muy Alta': '#ff2d2d', Alta: '#ff8c1a', Moderada: '#ffe14d', Baja: '#9be15d', 'Muy Baja': '#2ecc71', SD: '#cccccc' };
+export const COLOR_MIDAS = { zona: '#6fb6ff' };
 
 // Nivel del agua que alcanza la tierra baja en cada horizonte (años desde hoy), con valores medidos para Cartagena:
 //  - marea astronómica de sicigia 0,20 m y sobreelevación de tormenta de 10 años de retorno 0,20 m;
@@ -140,25 +150,26 @@ function parchearTerreno(mat, U) {
     sh.uniforms.uPlanAmt = U.uPlanAmt;
     sh.uniforms.uFranja = U.uFranja;
     sh.uniforms.uTime = U.uTime;
+    sh.uniforms.uMidasOn = U.uMidasOn;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec2 aWin;\nvarying vec2 vWin;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uLost;\nuniform float uYear;\nuniform float uMode;\nuniform float uDim;\nuniform sampler2D uPlan;\nuniform vec3 uPlanAmt;\nuniform float uFranja;\nuniform float uTime;\nvarying vec2 vWin;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uLost;\nuniform float uYear;\nuniform float uMode;\nuniform float uDim;\nuniform sampler2D uPlan;\nuniform vec3 uPlanAmt;\nuniform float uFranja;\nuniform float uTime;\nuniform float uMidasOn;\nvarying vec2 vWin;')
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
         vec4 lt = texture2D(uLost, vWin);
         float lostAt = lt.r * 63.75;
-        if (lt.g < 0.5) discard;
-        bool gone = uYear > 0.001 && lostAt <= uYear;
+        if (lt.g < 0.04) discard; // el borde del terreno queda bajo el agua (antes se cortaba en la costa y se veía flotando)\n        float enTierra = step(0.5, lt.g);
+        bool gone = enTierra > 0.5 && uYear > 0.001 && lostAt <= uYear;
         if (gone && uMode > 0.5) discard;
         diffuseColor.rgb *= mix(1.0, 0.30, uDim);
         if (gone) {
           vec3 band = lostAt <= 10.0 ? vec3(0.60, 0.09, 0.09) : (lostAt <= 20.0 ? vec3(0.86, 0.15, 0.15) : vec3(0.98, 0.45, 0.42));
           diffuseColor.rgb = mix(diffuseColor.rgb, band, 0.84);
         }
-        float front = smoothstep(0.8, 0.0, abs(lostAt - uYear)) * step(0.001, uYear) * (1.0 - uMode);
+        float front = smoothstep(0.8, 0.0, abs(lostAt - uYear)) * step(0.001, uYear) * (1.0 - uMode) * enTierra;
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.66, 0.34), front * 0.9);
         // plan maestro: la franja que se pierde pasa de rojo a parque; meseta segura, parque central y humedal
         if (uFranja > 0.001 && uYear > 0.001 && lostAt <= 30.0) {
@@ -172,10 +183,15 @@ function parchearTerreno(mat, U) {
         diffuseColor.rgb += vec3(0.15, 0.95, 0.80) * (1.0 - smoothstep(0.0, 0.16, abs(pz.r - 0.5))) * uPlanAmt.x * (0.35 + 0.35 * pulso);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.58, 0.30), 0.62 * pz.g * uPlanAmt.y);
         diffuseColor.rgb += vec3(0.30, 0.95, 0.45) * (1.0 - smoothstep(0.0, 0.16, abs(pz.g - 0.5))) * uPlanAmt.y * 0.4;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.20, 0.62, 0.78), 0.66 * pz.b * uPlanAmt.z);`
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.20, 0.62, 0.78), 0.66 * pz.b * uPlanAmt.z);
+        // zona inundable oficial de MIDAS: rayado azul suave
+        if (uMidasOn > 0.001 && lt.b > 0.5) {
+          float rayaM = step(0.6, fract((vWin.x * 1.78 - vWin.y) * 650.0));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.32, 0.6, 1.0), (0.16 + 0.34 * rayaM) * uMidasOn);
+        }`
       );
   };
-  mat.customProgramCacheKey = () => 'erosion-v1';
+  mat.customProgramCacheKey = () => 'erosion-v2';
 }
 
 const COLOR_TIPO = {
@@ -205,7 +221,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   let disposed = false;
 
   // ---------- carga de datos ----------
-  const TOTAL = 14;
+  const TOTAL = 15;
   let hechas = 0;
   const track = (p) => p.then((r) => { hechas++; onProgreso(0.6 * (hechas / TOTAL), 'Descargando la isla'); return r; });
   const jsonOf = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u); return r.json(); });
@@ -219,7 +235,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     return JSON.parse(new TextDecoder().decode(u8));
   };
 
-  const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, cartagenaMascaraImg, ...demImgs] = await Promise.all([
+  const [satImg, maskImg, patchImg, geoRef, veg, construcciones, sintaxis, normalsImg, cartagenaMascaraImg, midasJson, ...demImgs] = await Promise.all([
     track(loadImg(`${BASE}assets/texturas/sat_base.jpg`)),
     track(loadImg(`${BASE}datos/isla_mascara_osm.png`)),
     track(loadImg(`${BASE}assets/texturas/tierrabomba_satelite.jpg`)),
@@ -229,6 +245,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     track(jsonOf(`${BASE}datos/sintaxis.json`)),
     track(loadImg(`${BASE}datos/water_normals_fine.jpg`)),
     track(loadImg(`${BASE}datos/cartagena_mascara.png`)),
+    track(jsonOf(`${BASE}datos/midas_tierrabomba.json`)),
     track(loadImg(`${BASE}datos/elevacion/1187_1929.png`)),
     track(loadImg(`${BASE}datos/elevacion/1188_1929.png`)),
     track(loadImg(`${BASE}datos/elevacion/1187_1930.png`)),
@@ -416,12 +433,104 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
       }
     }
   }
+  // ---------- capas oficiales de MIDAS (Alcaldía de Cartagena; Secretaría de Planeación - INVEMAR - CDKN) ----------
+  // Inundación moderada = escenario 2019; inundación fuerte = escenario 2040 (INVEMAR et al. 2012, p. 24).
+  // Se miden sobre el relieve: la cota que el agua debe alcanzar para cubrir cada mancha. Con esas dos cotas y sus
+  // años se traza una recta (cota que sube con el tiempo) y de ella salen los demás años.
+  const llPx = (lon, lat) => { const [tx, ty] = lonLatToTile(lon, lat); return [((tx - tx0) / (tx1 - tx0)) * W, ((ty - ty0) / (ty1 - ty0)) * H]; };
+  const rasterizar = (anillos) => {
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.fillStyle = '#fff'; cx.beginPath();
+    anillos.forEach((r) => { r.forEach(([lo, la], k) => { const [x, y] = llPx(lo, la); if (k) cx.lineTo(x, y); else cx.moveTo(x, y); }); cx.closePath(); });
+    cx.fill('evenodd');
+    const d = cx.getImageData(0, 0, W, H).data; const m = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) m[i] = d[i * 4] > 127 ? 1 : 0;
+    return m;
+  };
+  const midasMod = rasterizar(midasJson.moderada2019 || []);
+  const midasFue = rasterizar(midasJson.fuerte2040 || []);
+  const cotaDe = (mask) => {
+    const vals = []; let px = 0;
+    for (let i = 0; i < W * H; i++) if (mask[i] && land[i]) px++;
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      const x = Math.min(W - 1, gx * GR + (GR >> 1)); const y = Math.min(H - 1, gy * GR + (GR >> 1)); const i = y * W + x;
+      if (mask[i] && land[i] && Number.isFinite(nivelCelda[gy * gw + gx])) vals.push(nivelCelda[gy * gw + gx]);
+    }
+    vals.sort((a, b) => a - b);
+    const q = (p) => (vals.length ? vals[Math.min(vals.length - 1, Math.floor(p * (vals.length - 1)))] : 0);
+    return { cota: q(0.85), mediana: q(0.5), ha: ha(px), celdas: vals.length };
+  };
+  const mMod = cotaDe(midasMod);
+  const mFue = cotaDe(midasFue);
+  // zona inundable oficial (unión 2019 + 2040) en el canal B de la textura de pérdida: el terreno la dibuja rayada
+  const midasZona = new Uint8Array(W * H);
+  let midasZonaPx = 0;
+  for (let i = 0; i < W * H; i++) {
+    const z = (midasMod[i] || midasFue[i]) && land[i] ? 1 : 0;
+    midasZona[i] = z; midasZonaPx += z;
+    lostData[i * 4 + 2] = z ? 255 : 0;
+  }
+  lostTex.needsUpdate = true;
+  const enZonaMidas = (X, Z) => {
+    const px = Math.floor(((X / mpt + txc - tx0) / (tx1 - tx0)) * W); const py = Math.floor(((Z / mpt + tyc - ty0) / (ty1 - ty0)) * H);
+    return px >= 0 && py >= 0 && px < W && py < H && midasZona[py * W + px] === 1;
+  };
+  // ¿el trazo está sobre Tierra Bomba? (al menos 30 % de sus vértices a menos de ~40 m de la tierra de la isla)
+  const cercaTierra = (lon, lat) => {
+    const [x, y] = llPx(lon, lat); const R = 8;
+    for (let dy = -R; dy <= R; dy += 2) for (let dx = -R; dx <= R; dx += 2) {
+      const xx = Math.round(x + dx); const yy = Math.round(y + dy);
+      if (xx >= 0 && yy >= 0 && xx < W && yy < H && land[yy * W + xx]) return true;
+    }
+    return false;
+  };
+  const sobreIsla = (pts) => pts.filter((p) => cercaTierra(p[0], p[1])).length >= 0.3 * pts.length;
+  const MIDAS_AÑOS = [2019, 2040];
+
+  // tasa de erosión por tramo: cada píxel de tierra toma la tasa del tramo de MIDAS más cercano (hasta ~200 m); sin tramo, el promedio
+  const tasaPx = new Float32Array(W * H).fill(TASA_MEDIA);
+  {
+    const seed = new Float32Array(W * H).fill(-1);
+    const cola = [];
+    (midasJson.erosion || []).forEach(({ clase, pts }) => {
+      const r = TASA_CLASE[clase] ?? TASA_MEDIA;
+      for (let k = 0; k < pts.length - 1; k++) {
+        const [x0, y0] = llPx(...pts[k]); const [x1, y1] = llPx(...pts[k + 1]);
+        const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
+        for (let s = 0; s <= n; s++) {
+          const x = Math.round(x0 + ((x1 - x0) * s) / n); const y = Math.round(y0 + ((y1 - y0) * s) / n);
+          if (x < 0 || y < 0 || x >= W || y >= H) continue;
+          const i = y * W + x;
+          if (seed[i] < 0) cola.push(i);
+          seed[i] = Math.max(seed[i], r);
+        }
+      }
+    });
+    const dist = new Uint16Array(W * H).fill(65535);
+    cola.forEach((i) => { dist[i] = 0; });
+    const LIM = Math.round(200 / mpp);
+    for (let h = 0; h < cola.length; h++) {
+      const i = cola[h]; const x = i % W; const y = (i / W) | 0;
+      if (dist[i] >= LIM) continue;
+      const vec = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1];
+      for (const n of vec) { if (n >= 0 && dist[n] === 65535) { dist[n] = dist[i] + 1; seed[n] = seed[i]; cola.push(n); } }
+    }
+    for (let i = 0; i < W * H; i++) if (land[i] && seed[i] > 0) tasaPx[i] = seed[i];
+  }
+
   let floodModelo = '';
   const calcularFlood = (modelo, nivelM = 2) => {
     if (modelo === 'retroceso') return;
     const clave = modelo === 'manual' ? `manual|${nivelM}` : modelo;
     if (clave === floodModelo) return;
     floodModelo = clave;
+    if (modelo === 'midas') {
+      // la mancha de MIDAS es amenaza de inundación por eventos (no tierra que el mar ocupa para siempre): no se cuenta como
+      // pérdida; se muestra aparte, rayada. La pérdida en este escenario es la erosión por tramo.
+      floodYears.fill(999);
+      return;
+    }
     if (modelo === 'manual') {
       // escenario manual: el agua está a +nivelM desde el primer año (lo que queda por debajo se inunda de inmediato)
       for (let c = 0; c < gw * gh; c++) floodYears[c] = Number.isFinite(nivelCelda[c]) && nivelCelda[c] <= nivelM ? 0 : 999;
@@ -442,7 +551,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
       for (let px = 0; px < W; px++) {
         const i = py * W + px;
         if (!land[i]) { lostY[i] = 0; lostData[i * 4] = 0; continue; }
-        let y = distM[i] / TASA;
+        let y = distM[i] / tasaPx[i];
         if (modelo !== 'retroceso') {
           const fx = (px + 0.5) / GR - 0.5;
           const gx0 = Math.max(0, Math.min(gw - 2, Math.floor(fx)));
@@ -460,7 +569,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     for (let k = 1; k <= 30; k++) cumLostPx[k] = cumLostPx[k - 1] + hist[k];
     lostTex.needsUpdate = true;
   };
-  calcularPerdida('leva');
+  calcularPerdida('midas');
 
   const NX = small ? 130 : 180;
   const NY = Math.round((NX * H) / W);
@@ -479,7 +588,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         const ty = ty0 + v * (ty1 - ty0);
         const [X, Z] = toXZ(tx, ty);
         const landW = smooth(0.3, 0.85, smallMask(u, v));
-        const h = Math.max(0, demAtTile(tx, ty)) * EXAG * landW + 0.3 * landW;
+        const h = (Math.max(0, demAtTile(tx, ty)) * EXAG + 0.3) * landW - (1 - landW) * 4; // fuera de la costa el terreno baja bajo el mar: el agua llega a la orilla, sin huecos
         heights[j * (NX + 1) + i] = h;
         pos[p++] = X; pos[p++] = h; pos[p++] = Z;
         uvSat[q] = (tx - MOSAICO.x0) / MOSAICO.nx;
@@ -553,7 +662,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   planTex.generateMipmaps = false;
   const U = {
     uPlan: { value: planTex }, uPlanAmt: { value: new THREE.Vector3(0, 0, 0) }, uFranja: { value: 0 }, uTime: { value: 0 },
-    uLost: { value: lostTex }, uYear: { value: 0 }, uMode: { value: 0 }, uDim: { value: 0 },
+    uLost: { value: lostTex }, uYear: { value: 0 }, uMode: { value: 0 }, uDim: { value: 0 }, uMidasOn: { value: 0 },
   };
   const terrainMat = new THREE.MeshStandardMaterial({ map: textureFrom(satImg, maxTex), roughness: 1, metalness: 0 });
   parchearTerreno(terrainMat, U);
@@ -1369,6 +1478,39 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     areaParqueHa: () => ha(cumLostPx[30]),
   };
 
+  // ---------- trazo de las capas de MIDAS sobre el relieve (inundación 2019 y 2040, erosión por tramo) ----------
+  const midasGroup = new THREE.Group();
+  midasGroup.visible = false;
+  scene.add(midasGroup);
+  const trazoMidas = (lineas, color, ancho) => {
+    const pos = [];
+    lineas.forEach((pts) => {
+      for (let k = 0; k < pts.length - 1; k++) {
+        const [x0, z0] = llToXZ(...pts[k]); const [x1, z1] = llToXZ(...pts[k + 1]);
+        const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 15));
+        for (let j = 0; j < n; j++) {
+          const ax = x0 + ((x1 - x0) * j) / n; const az = z0 + ((z1 - z0) * j) / n;
+          const bx = x0 + ((x1 - x0) * (j + 1)) / n; const bz = z0 + ((z1 - z0) * (j + 1)) / n;
+          pos.push(ax, heightAtXZ(ax, az) + 2.5, az, bx, heightAtXZ(bx, bz) + 2.5, bz);
+        }
+      }
+    });
+    if (!pos.length) return;
+    const g = new LineSegmentsGeometry();
+    g.setPositions(pos);
+    const m = new LineMaterial({ color, linewidth: ancho, transparent: true, opacity: 0.95, depthWrite: false });
+    const ln = new LineSegments2(g, m);
+    ln.renderOrder = 14; ln.frustumCulled = false;
+    midasGroup.add(ln);
+    lineMats.push(m);
+  };
+  {
+    trazoMidas([...(midasJson.moderada2019 || []), ...(midasJson.fuerte2040 || [])].filter(sobreIsla), new THREE.Color(COLOR_MIDAS.zona).getHex(), 2.2);
+    const porClase = {};
+    (midasJson.erosion || []).filter((e) => sobreIsla(e.pts)).forEach(({ clase, pts }) => { (porClase[clase] = porClase[clase] || []).push(pts); });
+    Object.entries(porClase).forEach(([clase, ls]) => trazoMidas(ls, new THREE.Color(COLOR_CLASE_EROSION[clase] || '#cccccc').getHex(), 5));
+  }
+
   // ---------- capas de color ----------
   const colorTmp = new THREE.Color();
   const gris = new THREE.Color().setRGB(0.30, 0.32, 0.34);
@@ -1422,10 +1564,15 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     riesgoRed,
     km: { peatonal: redes.peatonal.km, motos: redes.motos.km },
     porTipo: { peatonal: redes.peatonal.porTipo, motos: redes.motos.porTipo },
-    modelo: 'leva',
+    modelo: 'midas',
+    midas: {
+      haMod: mMod.ha, haFue: mFue.ha, haZona: ha(midasZonaPx), cotaMediana: mFue.mediana, años: MIDAS_AÑOS,
+      casasZona: houses.reduce((n, hh) => n + (enZonaMidas(hh.x, hh.z) ? 1 : 0), 0),
+      fuente: midasJson.fuente, consulta: midasJson.consulta,
+    },
     plan: { meseta: mesetaInfo, viviendasColocadas: NV, parqueHa: 0, casasFranja: 0, reubicadas: 0 },
   };
-  let curModelo = 'leva';
+  let curModelo = 'midas';
   let curNivel = 2;
   let alCambiarModelo = () => {};
   const refrescarStats = () => {
@@ -1480,7 +1627,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   };
 
   // ---------- estado objetivo y bucle ----------
-  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'leva', nivelManual: 2, plan: null };
+  const T = { cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, modelo: 'midas', nivelManual: 2, plan: null, midas: false };
   // vista libre del usuario (zoom, giro, desplazamiento) sobre la pose de cada paso
   const vt = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
   const vi = { zoom: 1, az: 0, el: 0, px: 0, pz: 0 };
@@ -1550,6 +1697,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     U.uMode.value = T.modo === 'despues' ? 1 : 0;
     cur.dim += (T.dim - cur.dim) * expo(dt, 3);
     U.uDim.value = cur.dim;
+    U.uMidasOn.value += ((T.midas ? 1 : 0) - U.uMidasOn.value) * expo(dt, 4);
 
     // cámara
     const pose = POSES[T.cam](t * (reduce ? 0 : 1));
@@ -1663,6 +1811,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     etiquetas.visible = cur.contexto > 0.05;
     etiquetas.children.forEach((s) => { s.material.opacity = cur.contexto; });
     waterUniforms.uTime.value = t;
+    midasGroup.visible = !!T.midas;
     renderReflejo(camera);
     for (const k of PLAN_KEYS) planT[k] = (T.plan && T.plan[k]) || 0;
     actualizarPlan(dt, t, cur.escala);

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gradienteCSS } from '../lib/paleta.js';
-import { GRUPOS_TIPO, TASA, nivelModelo, RUNUP_M, OLEAJE } from '../lib/escena.js';
+import { GRUPOS_TIPO, TASA_MEDIA, TASA_MAX, TASA_CLASE, AÑO_BASE, COLOR_CLASE_EROSION, COLOR_MIDAS, nivelModelo, RUNUP_M, OLEAJE } from '../lib/escena.js';
 import Red from './Red.jsx';
 import Social from './Social.jsx';
 import { PLAN_PASOS, planEstado, SeccionEsquema } from './Plan.jsx';
@@ -134,15 +134,28 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
   const casas = stats.casasAnio(anio);
   const ha = stats.haAnio(anio);
   const pct = stats.pctAnio(anio);
-  const m = TASA * anio;
+  const mid = stats.midas;
+  const nivelHoy = ctrl.modelo === 'manual' ? ctrl.nivel : nivelModelo(anio, ctrl.modelo);
   return (
     <aside className={`${contenedorPanel} entra`} aria-live="polite">
       <p className="etiqueta text-arcilla">03 · Si no se frena la erosión</p>
       <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Modelo de afectación">
-        {[['leva', 'Retroceso + marea de leva'], ['tormenta', 'Marea y tormenta'], ['manual', 'Nivel manual'], ['retroceso', 'Solo retroceso']].map(([v, t]) => (
+        {[['midas', 'MIDAS · INVEMAR'], ['leva', 'Retroceso + marea de leva'], ['tormenta', 'Marea y tormenta'], ['manual', 'Nivel manual'], ['retroceso', 'Solo retroceso']].map(([v, t]) => (
           <button key={v} type="button" className="ficha" aria-pressed={ctrl.modelo === v} onClick={() => setCtrl((c) => ({ ...c, modelo: v }))}>{t}</button>
         ))}
       </div>
+      <label className="mt-3 flex cursor-pointer items-center gap-2 text-[12px] text-white/75">
+        <input type="checkbox" checked={!!ctrl.verMidas} onChange={(e) => setCtrl((c) => ({ ...c, verMidas: e.target.checked }))} className="accent-[#c86d51]" />
+        Trazar las capas oficiales de MIDAS
+      </label>
+      {ctrl.verMidas && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/65">
+          <span className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-4" style={{ background: `repeating-linear-gradient(135deg, ${COLOR_MIDAS.zona} 0 2px, transparent 2px 5px)`, outline: `1px solid ${COLOR_MIDAS.zona}` }} />Zona inundable {mid.años[0]}–{mid.años[1]}</span>
+          {['Muy Alta', 'Alta', 'Moderada', 'Baja'].map((c) => (
+            <span key={c} className="flex items-center gap-1.5"><i className="inline-block h-[5px] w-4" style={{ background: COLOR_CLASE_EROSION[c] }} />Erosión {c.toLowerCase()}</span>
+          ))}
+        </div>
+      )}
       {ctrl.modelo === 'manual' && (
         <div className="mt-3">
           <label className="etiqueta flex items-center justify-between text-white/60" htmlFor="nivel-manual">
@@ -157,7 +170,11 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
           {anio === 0 ? 'Hoy' : `+${anio}`}
           {anio > 0 && <span className="ml-2 text-base font-normal text-white/55">años</span>}
         </p>
-        <p className="num text-right text-xs leading-snug text-white/55">{fmt(m, 0)} m de retroceso{ctrl.modelo !== 'retroceso' && <><br />agua hasta +{fmt(ctrl.modelo === 'manual' ? ctrl.nivel : nivelModelo(anio, ctrl.modelo), 2)} m</>}</p>
+        <p className="num text-right text-xs leading-snug text-white/55">
+          {anio > 0 ? `${fmt(TASA_MEDIA * anio, 0)}–${fmt(TASA_MAX * anio, 0)} m de retroceso` : `año ${AÑO_BASE}`}
+          {ctrl.modelo !== 'retroceso' && ctrl.modelo !== 'midas' && <><br />agua hasta +{fmt(nivelHoy, 2)} m</>}
+          {anio > 0 && <><br />año {AÑO_BASE + anio}</>}
+        </p>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-4 border-t border-white/14 pt-3">
@@ -170,6 +187,13 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
           <p className="mt-1.5 text-xs leading-snug text-white/65">hectáreas de costa<br />({fmt(pct, 1)} % de la isla)</p>
         </div>
       </div>
+
+      {ctrl.verMidas && (
+        <p className="mt-3 flex items-baseline gap-2 border-t border-white/14 pt-3 text-xs leading-snug text-white/70">
+          <span className="num text-xl font-semibold text-[#8cc4ff]">{fmt(mid.casasZona)}</span>
+          <span>viviendas dentro de la zona inundable oficial de MIDAS ({fmt(mid.haZona, 0)} ha de la isla). Es amenaza por eventos, no tierra perdida.</span>
+        </p>
+      )}
 
       <div className="mt-4">
         <div className="relative h-[3px] bg-white/18">
@@ -190,6 +214,8 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
           ? 'Así quedaría la isla: el mar ocupa lo que se pierde y las viviendas dentro de ello desaparecen.'
           : anio === 0
             ? 'La costa actual, según la silueta oficial de la isla. Desplázate: el mar empieza a avanzar.'
+            : ctrl.modelo === 'midas'
+              ? `En rojo, la tierra que se pierde por erosión: cada tramo de costa retrocede según su amenaza en MIDAS, con las tasas medidas por INVEMAR en la isla. En azul rayado, la zona inundable oficial por ascenso del nivel del mar (escenarios ${mid.años[0]} y ${mid.años[1]}). El frente naranja es la costa de ese año.`
             : ctrl.modelo === 'leva'
               ? 'En rojo, lo que el borde que retrocede o una marea de leva alcanza, siguiendo las curvas de nivel: el oleaje trepa por la costa y entra por la tierra baja. El frente naranja es el avance de ese año.'
               : ctrl.modelo === 'manual'
@@ -204,11 +230,13 @@ function PanelErosion({ stats, anio, modo, ctrl, setCtrl }) {
         ))}
       </div>
       <p className="mt-3 border-t border-white/12 pt-2.5 text-[11px] leading-snug text-white/45">
-        {ctrl.modelo === 'manual'
-          ? `Escenario manual: no es una proyección. Retroceso de ${fmt(TASA, 1)} m/año más toda la tierra baja conectada con el mar por debajo de +${fmt(ctrl.nivel, 1)} m. El relieve tiene unos 30 m de resolución y varios metros de error vertical.`
+        {ctrl.modelo === 'midas'
+          ? `Erosión: INVEMAR midió en Tierra Bomba un retroceso promedio de ${fmt(TASA_MEDIA, 2)} m/año y máximo de ${fmt(TASA_MAX, 0)} m/año (fotografías aéreas 1994-2011; INVEMAR-MADS-Alcaldía-CDKN 2012, p. 20). Cada tramo toma una tasa según su amenaza por erosión en MIDAS (INVEMAR 2011): muy alta ${fmt(TASA_CLASE['Muy Alta'], 1)}, alta ${fmt(TASA_CLASE.Alta, 1)}, moderada ${fmt(TASA_CLASE.Moderada, 2)}, baja ${fmt(TASA_CLASE.Baja, 1)} m/año. INVEMAR da solo el promedio y el máximo: los valores por clase son una asignación de esta presentación. Los tramos sin clase usan el promedio. Zona inundable: capas de MIDAS (Alcaldía de Cartagena; Secretaría de Planeación-INVEMAR-CDKN 2014, consultadas el ${mid.consulta}); según INVEMAR et al. (2012, p. 24) la inundación moderada es el escenario ${mid.años[0]} y la fuerte el ${mid.años[1]}. Sobre la isla las dos manchas coinciden (${fmt(mid.haZona, 0)} ha), así que no dan una tendencia entre años; y en el relieve usado llegan a terrenos de varios metros (mediana +${fmt(mid.cotaMediana, 0)} m): marcan amenaza por eventos (mar de leva, lluvias), no mar permanente.`
+          : ctrl.modelo === 'manual'
+          ? `Escenario manual: no es una proyección. Retroceso por tramo (${fmt(TASA_MEDIA, 2)} a ${fmt(TASA_MAX, 0)} m/año) más toda la tierra baja conectada con el mar por debajo de +${fmt(ctrl.nivel, 1)} m. El relieve tiene unos 30 m de resolución y varios metros de error vertical.`
           : ctrl.modelo !== 'retroceso'
-          ? `Retroceso de ${fmt(TASA, 1)} m/año más la inundación de la tierra baja. Nivel del agua: marea 0,20 m + tormenta 0,20 m + ascenso RCP 4.5 + subsidencia${ctrl.modelo === 'leva' ? ` + oleaje (trepada del 2 % de ${fmt(RUNUP_M, 1)} m con olas de ${fmt(OLEAJE.hs, 1)} m y ${OLEAJE.tp} s, pendiente de playa de ${fmt(OLEAJE.pendiente * 100, 0)} %, fórmula de Stockdon)` : ''}. Marea, tormenta, ascenso y olas son de Cartagena (Orejarena-Rondón et al., 2019); la pendiente de playa es un supuesto. El relieve tiene unos 30 m de resolución y varios metros de error vertical: la inundación es indicativa.`
-          : `Retroceso uniforme de ${fmt(TASA, 1)} m/año (tasa máxima registrada); la erosión real varía por tramo.`}
+          ? `Retroceso por tramo (${fmt(TASA_MEDIA, 2)} a ${fmt(TASA_MAX, 0)} m/año, INVEMAR) más la inundación de la tierra baja. Nivel del agua: marea 0,20 m + tormenta 0,20 m + ascenso RCP 4.5 + subsidencia${ctrl.modelo === 'leva' ? ` + oleaje (trepada del 2 % de ${fmt(RUNUP_M, 1)} m con olas de ${fmt(OLEAJE.hs, 1)} m y ${OLEAJE.tp} s, pendiente de playa de ${fmt(OLEAJE.pendiente * 100, 0)} %, fórmula de Stockdon)` : ''}. Marea, tormenta, ascenso y olas son de Cartagena (Orejarena-Rondón et al., 2019); la pendiente de playa es un supuesto. El relieve tiene unos 30 m de resolución y varios metros de error vertical: la inundación es indicativa.`
+          : `Retroceso por tramo según la amenaza por erosión de MIDAS: de ${fmt(TASA_MEDIA, 2)} m/año (promedio medido por INVEMAR en la isla) a ${fmt(TASA_MAX, 0)} m/año (máximo).`}
         {' '}Construcciones del archivo de la tesis, con alturas de referencia.
       </p>
     </aside>
@@ -515,7 +543,7 @@ function Cierre({ api, version }) {
     if (!d || !s) return [];
     const top = (red, k) => d[red][k]?.[0]?.nombre;
     const lista = [
-      `Con retroceso de ${fmt(TASA, 1)} m/año${s.modelo === 'manual' ? ' y un nivel de agua manual' : s.modelo !== 'retroceso' ? ` y un nivel de agua de hasta +${fmt(nivelModelo(30, s.modelo), 2)} m (${s.modelo === 'leva' ? 'marea de leva con oleaje' : 'marea y tormenta'})` : ''}, a 30 años se pierden ${fmt(s.ha[30], 0)} ha (${fmt(s.pct[30], 1)} % de la isla) y ${fmt(s.casas[30])} de las ${fmt(s.casas.total)} construcciones del archivo.`,
+      `Con un retroceso por tramo de ${fmt(TASA_MEDIA, 2)} a ${fmt(TASA_MAX, 0)} m/año (INVEMAR)${s.modelo === 'manual' ? ' y un nivel de agua manual' : s.modelo === 'midas' ? ` (cada tramo según su amenaza por erosión en MIDAS; la zona inundable oficial, ${fmt(s.midas.haZona, 0)} ha con ${fmt(s.midas.casasZona)} viviendas, se muestra aparte como amenaza)` : s.modelo !== 'retroceso' ? ` y un nivel de agua de hasta +${fmt(nivelModelo(30, s.modelo), 2)} m (${s.modelo === 'leva' ? 'marea de leva con oleaje' : 'marea y tormenta'})` : ''}, a 30 años se pierden ${fmt(s.ha[30], 0)} ha (${fmt(s.pct[30], 1)} % de la isla) y ${fmt(s.casas[30])} de las ${fmt(s.casas.total)} construcciones del archivo.`,
       (() => {
         const nombres = [top('peatonal', 'top_integracion'), top('peatonal', 'top_eleccion'), top('motos', 'top_integracion'), top('motos', 'top_eleccion')];
         return new Set(nombres).size === 1
@@ -657,7 +685,7 @@ export default function Relato({ api, sinEscena }) {
   const [planIdx, setPlanIdx] = useState(0);
   const [anio, setAnio] = useState(0);
   const [modo, setModo] = useState('perdida');
-  const [ctrl, setCtrl] = useState({ radio: 'n', redRiesgo: 'peatonal', anioRiesgo: 30, modelo: 'leva', nivel: 2 });
+  const [ctrl, setCtrl] = useState({ radio: 'n', redRiesgo: 'peatonal', anioRiesgo: 30, modelo: 'midas', nivel: 2, verMidas: true });
   const [version, setVersion] = useState(0);
   const [explorar, setExplorar] = useState(false);
   const [panelOculto, setPanelOculto] = useState(false);
@@ -672,13 +700,13 @@ export default function Relato({ api, sinEscena }) {
     if (!a) return;
     const { cap: c, pasoIdx: pi, p } = S.current;
     const k = ctrlRef.current;
-    const base = { modelo: k.modelo, nivelManual: k.nivel, cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, plan: null };
+    const base = { modelo: k.modelo, nivelManual: k.nivel, cam: 'hero', year: 0, modo: 'perdida', red: null, capa: 'tipo', radio: 'n', calles: 0, casas: 1, dim: 0, rutas: 0, contexto: 0, plan: null, midas: false };
     let est = base;
     if (c === 'portada') est = base;
     else if (c === 'problema') est = { ...base, cam: 'problema', dim: 0.1 };
     else if (c === 'erosion') {
       const y = 30 * ease(clamp01((p - 0.08) / 0.76));
-      est = { ...base, cam: p < 0.58 ? 'casco' : 'isla', year: y, modo: p > 0.9 ? 'despues' : 'perdida' };
+      est = { ...base, cam: p < 0.58 ? 'casco' : 'isla', year: y, modo: p > 0.9 ? 'despues' : 'perdida', midas: !!k.verMidas };
     } else if (c === 'vias') est = { ...base, cam: 'vias', red: 'peatonal', capa: 'tipo', calles: 1, casas: 0, dim: 0.55 };
     else if (c === 'sintaxis') {
       const ps = PASOS[pi];
