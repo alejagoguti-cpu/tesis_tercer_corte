@@ -756,10 +756,25 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     {
       uTime: { value: 0 }, uNormals: { value: normals }, uShore: { value: shoreTex }, uSun: { value: sunDir.clone() },
       uWin: { value: new THREE.Vector4(txc - tx0, tyc - ty0, tx1 - tx0, ty1 - ty0) }, uMpt: { value: mpt },
-      uDeep: { value: new THREE.Color(0x02151f) }, uMid: { value: new THREE.Color(0x07323f) }, uShallow: { value: new THREE.Color(0x2a5f60) },
+      uDeep: { value: new THREE.Color(0x06293a) }, uMid: { value: new THREE.Color(0x0d4a5c) }, uShallow: { value: new THREE.Color(0x2f8a8c) },
       uHorizon: { value: new THREE.Color(0xa9cfdc) }, uZenith: { value: new THREE.Color(0x2c6fb0) },
     },
   ]);
+  // ---------- agua realista ----------
+  // 1) reflejo plano real: una cámara espejo bajo el nivel del mar dibuja la isla, las casas, los árboles y el cielo
+  //    en una textura (como un espejo de agua); las olas la deforman.
+  // 2) color del agua y del fondo: la imagen satelital del propio mar (arrecifes, bajos, aguas profundas), sin colores inventados.
+  // 3) Fresnel: mirando hacia abajo se ve el fondo; mirando rasante domina el reflejo. Destello del sol y espuma suave en la orilla.
+  const reflOn = !small;
+  const reflRT = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, depthBuffer: true });
+  reflRT.texture.generateMipmaps = false;
+  const reflCam = new THREE.PerspectiveCamera();
+  const reflTexMat = new THREE.Matrix4();
+  waterUniforms.uRefl = { value: reflRT.texture };
+  waterUniforms.uTexMat = { value: reflTexMat };
+  waterUniforms.uReflOn = { value: reflOn ? 1 : 0 };
+  waterUniforms.uSat = { value: terrainMat.map };
+  waterUniforms.uMos = { value: new THREE.Vector4(txc - MOSAICO.x0, tyc - MOSAICO.y0, MOSAICO.nx, MOSAICO.ny) };
   const waterMat = new THREE.ShaderMaterial({
     uniforms: waterUniforms,
     fog: true,
@@ -776,48 +791,63 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     fragmentShader: `
       uniform float uTime; uniform sampler2D uNormals; uniform sampler2D uShore; uniform vec3 uSun; uniform vec4 uWin; uniform float uMpt;
       uniform vec3 uDeep; uniform vec3 uMid; uniform vec3 uShallow; uniform vec3 uHorizon; uniform vec3 uZenith;
+      uniform sampler2D uRefl; uniform mat4 uTexMat; uniform float uReflOn; uniform sampler2D uSat; uniform vec4 uMos;
       varying vec3 vWorld;
       #include <fog_pars_fragment>
       vec2 nm(vec2 p) { return texture2D(uNormals, p).rg * 2.0 - 1.0; }
       void main() {
         float dc = length(cameraPosition - vWorld);
         vec2 p = vWorld.xz;
-        float lod = 1.0 - smoothstep(250.0, 2600.0, dc);
-        vec2 n2 = nm(p / 180.0 + vec2(uTime * 0.012, uTime * 0.008)) * 0.9
-                + nm(p / 61.0 + vec2(-uTime * 0.02, uTime * 0.013)) * 0.7
-                + nm(p / 17.0 + vec2(uTime * 0.035, -uTime * 0.03)) * 0.55 * lod
-                + nm(p / 5.3 + vec2(-uTime * 0.05, uTime * 0.045)) * 0.3 * lod;
-        float k = mix(0.16, 0.32, lod);
+        float lod = 1.0 - smoothstep(300.0, 3200.0, dc);
+        vec2 n2 = nm(p / 210.0 + vec2(uTime * 0.010, uTime * 0.007)) * 0.8
+                + nm(p / 73.0 + vec2(-uTime * 0.018, uTime * 0.012)) * 0.6
+                + nm(p / 19.0 + vec2(uTime * 0.032, -uTime * 0.027)) * 0.5 * lod
+                + nm(p / 6.1 + vec2(-uTime * 0.05, uTime * 0.043)) * 0.32 * lod;
+        float k = mix(0.12, 0.26, lod);
         vec3 n = normalize(vec3(n2.x * k, 1.0, n2.y * k));
         vec3 V = normalize(cameraPosition - vWorld);
         float cosT = max(dot(n, V), 0.0);
         float F = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
         vec3 R = reflect(-V, n);
         R.y = abs(R.y);
-        vec3 sky = mix(uHorizon, uZenith, pow(clamp(R.y, 0.0, 1.0), 0.45));
+        // reflejo: textura espejo deformada por las olas (si no hay espejo, cielo analítico)
+        vec3 skyA = mix(uHorizon, uZenith, pow(clamp(R.y, 0.0, 1.0), 0.45));
+        vec4 rp = uTexMat * vec4(vWorld, 1.0);
+        vec2 ruv = rp.xy / rp.w + n.xz * (0.035 / (1.0 + dc / 2500.0));
+        vec4 rt = texture2D(uRefl, clamp(ruv, 0.001, 0.999));
+        vec3 refl = mix(skyA, min(rt.rgb, vec3(0.85)), rt.a * uReflOn); // donde el espejo no ve nada, cielo sin disco solar
+        refl *= vec3(0.74, 0.84, 0.92); // el agua refleja menos que un espejo y tiñe el reflejo de azul
         // costa: distancia del mar a la tierra
         vec2 uv = vec2((vWorld.x / uMpt + uWin.x) / uWin.z, (vWorld.z / uMpt + uWin.y) / uWin.w);
         float inWin = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
         float dm = texture2D(uShore, clamp(uv, 0.0, 1.0)).r * 900.0;
-        dm = mix(900.0, dm, inWin);
         vec2 eb = min(uv, 1.0 - uv);
-        float borde = smoothstep(0.0, 0.05, min(eb.x, eb.y));
-        float sh = exp(-dm / 55.0) * borde;
+        float borde = smoothstep(0.0, 0.05, min(eb.x, eb.y)) * inWin;
         dm = mix(900.0, dm, borde);
-        vec3 body = mix(uDeep, uMid, 1.0 - smoothstep(0.0, 350.0, dm));
-        body = mix(body, uShallow, sh * 0.4);
-        // luz que atraviesa el agua (se ve más clara de cara al sol y en las crestas)
-        float sunUp = max(uSun.y, 0.0);
-        body *= 0.6 + 0.3 * sunUp + 0.14 * (n2.x + n2.y);
-        vec3 col = mix(body, sky * 0.8, clamp(F, 0.0, 1.0) * (0.5 + 0.5 * smoothstep(0.0, 0.5, 1.0 - cosT)));
-        // brillo del sol sobre las olas
+        // fondo y color del agua: la foto satelital del mar, solo en la franja costera de la isla (bajos y arrecifes);
+        // mar adentro, agua profunda (así no se pinta la ciudad ni el borde de la foto sobre el mar)
+        vec2 suv = vec2((vWorld.x / uMpt + uMos.x) / uMos.z, 1.0 - (vWorld.z / uMpt + uMos.y) / uMos.w);
+        vec3 sat = texture2D(uSat, clamp(suv + n.xz * 0.0006, 0.0, 1.0)).rgb;
+        // la foto trae el reflejo del sol del día en que se tomó (zonas beige claras): se limita su brillo y se conserva el color
+        float lumS = dot(sat, vec3(0.3, 0.59, 0.11));
+        sat *= min(1.0, 0.15 / max(lumS, 1e-4));
+        sat = mix(sat, sat * vec3(0.72, 1.0, 1.12), 0.7);
+        float bordeAncho = smoothstep(0.0, 0.14, min(eb.x, eb.y)) * inWin;
+        float costa = exp(-dm / 170.0) * bordeAncho;
+        float prof = smoothstep(0.0, 900.0, dm);
+        vec3 hondo = mix(uMid, uDeep, prof);
+        vec3 body = mix(hondo, sat * 1.08, costa);
+        // luz que atraviesa la cresta de la ola
+        body *= 0.86 + 0.22 * (n2.x + n2.y) * 0.5;
+        body += uShallow * 0.05 * max(0.0, n2.x + n2.y);
+        vec3 col = mix(body, refl, clamp(F, 0.0, 1.0));
+        // destellos del sol sobre las olas (finos, no un disco)
         float sd = max(dot(R, uSun), 0.0);
-        col += vec3(1.0, 0.93, 0.8) * (pow(sd, 1600.0) * 8.0 + pow(sd, 300.0) * 0.2);
-        // espuma en la orilla
-        float ws = 0.5 + 0.5 * sin(dm / 6.0 - uTime * 1.2 + n2.x * 3.0);
-        float rompe = (1.0 - smoothstep(0.0, 26.0, dm)) * (0.45 + 0.55 * ws) * inWin;
-        float rastro = (1.0 - smoothstep(18.0, 70.0, dm)) * smoothstep(0.78, 1.0, 0.5 + 0.5 * sin(dm / 9.0 - uTime * 0.7 + n2.y * 4.0)) * 0.35 * inWin;
-        col = mix(col, vec3(0.82, 0.88, 0.88), clamp(rompe * 0.45 + rastro * 0.5, 0.0, 0.5));
+        col += vec3(1.0, 0.94, 0.84) * pow(sd, 1400.0) * 3.5 * lod * lod; // de lejos el destello se apaga (si no, forma una mancha)
+        // espuma: una línea fina que respira donde rompe la ola
+        float ws = 0.5 + 0.5 * sin(dm / 5.0 - uTime * 1.1 + n2.x * 3.0);
+        float rompe = (1.0 - smoothstep(0.0, 14.0, dm)) * (0.35 + 0.65 * ws) * borde;
+        col = mix(col, vec3(0.86, 0.9, 0.9), clamp(rompe * 0.45, 0.0, 0.45));
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -827,6 +857,38 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   const water = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000), waterMat);
   water.rotation.x = -Math.PI / 2;
   scene.add(water);
+  // cámara espejo (misma idea que Reflector de three.js): posición, mira y vector "arriba" reflejados en el plano y = 0
+  const rClear = new THREE.Color();
+  const rPos = new THREE.Vector3(); const rLook = new THREE.Vector3(); const rRot = new THREE.Matrix4(); const rUp = new THREE.Vector3();
+  const BIAS = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+  const renderReflejo = (cam) => {
+    if (!reflOn || !water.visible) return;
+    cam.updateMatrixWorld();
+    rPos.setFromMatrixPosition(cam.matrixWorld);
+    if (rPos.y <= 0.5) return;
+    rRot.extractRotation(cam.matrixWorld);
+    rLook.set(0, 0, -1).applyMatrix4(rRot).add(rPos);
+    rUp.set(0, 1, 0).applyMatrix4(rRot);
+    reflCam.position.set(rPos.x, -rPos.y, rPos.z);
+    reflCam.up.set(rUp.x, -rUp.y, rUp.z);
+    reflCam.lookAt(rLook.x, -rLook.y, rLook.z);
+    reflCam.near = cam.near; reflCam.far = cam.far;
+    reflCam.updateMatrixWorld();
+    reflCam.projectionMatrix.copy(cam.projectionMatrix);
+    reflTexMat.copy(BIAS).multiply(reflCam.projectionMatrix).multiply(reflCam.matrixWorldInverse);
+    water.visible = false;
+    sky.visible = false; // el cielo se pone en el shader (sin el disco del sol, que en el reflejo era una mancha)
+    const prev = renderer.getRenderTarget();
+    renderer.getClearColor(rClear); const ca = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(reflRT);
+    renderer.clear();
+    renderer.render(scene, reflCam);
+    renderer.setRenderTarget(prev);
+    renderer.setClearColor(rClear, ca);
+    sky.visible = true;
+    water.visible = true;
+  };
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
   sun.position.copy(sunDir).multiplyScalar(8000);
   scene.add(sun, new THREE.HemisphereLight(0xcfe6ff, 0x6b5d3a, 0.7));
@@ -1405,6 +1467,8 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     const w = mount.clientWidth || window.innerWidth;
     const h = mount.clientHeight || window.innerHeight;
     renderer.setSize(w, h, false);
+    const prR = renderer.getPixelRatio() * 0.6; // el reflejo a 60 % de resolución: las olas lo deforman, no hace falta más
+    reflRT.setSize(Math.max(2, Math.round(w * prR)), Math.max(2, Math.round(h * prR)));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     lineMats.forEach((m) => m.resolution.set(w, h));
@@ -1555,6 +1619,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     etiquetas.visible = cur.contexto > 0.05;
     etiquetas.children.forEach((s) => { s.material.opacity = cur.contexto; });
     waterUniforms.uTime.value = t;
+    renderReflejo(camera);
     for (const k of PLAN_KEYS) planT[k] = (T.plan && T.plan[k]) || 0;
     actualizarPlan(dt, t, cur.escala);
     renderer.render(scene, camera);
