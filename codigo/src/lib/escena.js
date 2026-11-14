@@ -161,7 +161,7 @@ function parchearTerreno(mat, U) {
         `#include <map_fragment>
         vec4 lt = texture2D(uLost, vWin);
         float lostAt = lt.r * 63.75;
-        if (lt.g < 0.04) discard; // el borde del terreno queda bajo el agua (antes se cortaba en la costa y se veía flotando)\n        float enTierra = step(0.5, lt.g);
+        if (lt.g < 0.5) discard; // se recorta en la costa; ahí la altura ya está bajo el agua (no flota ni deja halo)\n        float enTierra = step(0.5, lt.g);
         bool gone = enTierra > 0.5 && uYear > 0.001 && lostAt <= uYear;
         if (gone && uMode > 0.5) discard;
         diffuseColor.rgb *= mix(1.0, 0.30, uDim);
@@ -587,8 +587,8 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         const tx = tx0 + u * (tx1 - tx0);
         const ty = ty0 + v * (ty1 - ty0);
         const [X, Z] = toXZ(tx, ty);
-        const landW = smooth(0.3, 0.85, smallMask(u, v));
-        const h = (Math.max(0, demAtTile(tx, ty)) * EXAG + 0.3) * landW - (1 - landW) * 4; // fuera de la costa el terreno baja bajo el mar: el agua llega a la orilla, sin huecos
+        const landW = smooth(0.45, 0.9, smallMask(u, v)); // en la línea de costa (máscara 0,5) la altura llega a 0
+        const h = (Math.max(0, demAtTile(tx, ty)) * EXAG + 0.3) * landW - (1 - landW) * 1.5; // en la costa el terreno queda medio metro bajo el agua: el mar llega a la orilla, sin huecos
         heights[j * (NX + 1) + i] = h;
         pos[p++] = X; pos[p++] = h; pos[p++] = Z;
         uvSat[q] = (tx - MOSAICO.x0) / MOSAICO.nx;
@@ -953,13 +953,18 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         vec3 sat = texture2D(uSat, clamp(suv + n.xz * 0.0006, 0.0, 1.0)).rgb;
         // la foto trae el reflejo del sol del día en que se tomó (zonas beige claras): se limita su brillo y se conserva el color
         float lumS = dot(sat, vec3(0.3, 0.59, 0.11));
-        sat *= min(1.0, 0.15 / max(lumS, 1e-4));
-        sat = mix(sat, sat * vec3(0.72, 1.0, 1.12), 0.7);
-        float bordeAncho = smoothstep(0.0, 0.14, min(eb.x, eb.y)) * inWin;
-        float costa = exp(-dm / 170.0) * bordeAncho * mix(0.45, 1.0, lod); // de lejos la franja clara se atenúa
-        float prof = smoothstep(0.0, 900.0, dm);
-        vec3 hondo = mix(uMid, uDeep, prof);
-        vec3 body = mix(hondo, sat * 1.08, costa);
+        sat *= min(1.0, 0.075 / max(lumS, 1e-4)); // brillo limitado: los bajos se ven, pero sin halo claro alrededor de la isla
+        sat = mix(sat, sat * vec3(0.75, 1.0, 1.1), 0.6);
+        // el mapa de distancias cubre solo un rectángulo alrededor de la isla: se desvanece en unos pocos píxeles de su borde
+        // (antes lo hacía en una franja ancha y se veía un corte recto en el lado oeste)
+        float bordeAncho = smoothstep(0.0, 0.008, min(eb.x, eb.y)) * inWin;
+        // el color de la foto junto a la costa solo de cerca (de lejos se leía como un halo alrededor de la isla)
+        float cercaCam = 1.0 - smoothstep(900.0, 2600.0, dc);
+        float costa = (1.0 - smoothstep(40.0, 320.0, dm)) * bordeAncho * cercaCam;
+        // un solo azul profundo, con variaciones suaves y grandes (no un degradé alrededor de la isla)
+        float var = 0.5 + 0.5 * nm(p / 2600.0 + vec2(uTime * 0.001, 0.0)).y;
+        vec3 hondo = uDeep * (0.88 + 0.24 * var);
+        vec3 body = mix(hondo, sat * 1.05, costa);
         // luz que atraviesa la cresta de la ola
         body *= 0.86 + 0.22 * (n2.x + n2.y) * 0.5;
         body += uShallow * 0.05 * max(0.0, n2.x + n2.y);
