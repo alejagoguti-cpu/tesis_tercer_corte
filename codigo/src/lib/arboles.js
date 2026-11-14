@@ -9,7 +9,10 @@ export const BASE = (() => {
   return b.endsWith('/') ? b : `${b}/`;
 })();
 
-const loadGLB = (url) => new Promise((res, rej) => new GLTFLoader().load(url, res, undefined, rej));
+/** reloj del viento compartido por todos los árboles (lo avanza la escena) */
+export const vientoT = { value: 0 };
+
+const loadGLB =(url) => new Promise((res, rej) => new GLTFLoader().load(url, res, undefined, rej));
 
 function bakeParts(scene) {
   scene.updateMatrixWorld(true);
@@ -46,9 +49,31 @@ export async function prepararEspecies() {
       p.material.side = THREE.DoubleSide;
       if (p.kind === 'leaf') {
         p.material.alphaTest = Math.max(p.material.alphaTest || 0, 0.4);
-        p.material.color.multiplyScalar(1.9);
-        p.material.envMapIntensity = 1.4;
+        p.material.alphaToCoverage = true; // bordes de hoja suaves con antialias
+        p.material.color.multiplyScalar(1.3);
+        p.material.envMapIntensity = 1.2;
       }
+      // vaivén leve con el viento: la copa se mueve más que la base; cada árbol con su propia fase
+      const k = p.kind === 'leaf' ? 1 : 0.45;
+      p.material.onBeforeCompile = (sh) => {
+        sh.uniforms.uViento = vientoT;
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', '#include <common>\nuniform float uViento;')
+          .replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+            #ifdef USE_INSTANCING
+            float faseV = instanceMatrix[3].x * 0.07 + instanceMatrix[3].z * 0.05;
+            #else
+            float faseV = 0.0;
+            #endif
+            float hV = max(position.y, 0.0);
+            float amV = ${(0.02 * k).toFixed(4)} * hV * hV;
+            transformed.x += sin(uViento * 1.2 + faseV) * amV + sin(uViento * 3.3 + faseV * 2.0) * amV * 0.25;
+            transformed.z += cos(uViento * 0.95 + faseV) * amV * 0.8;`
+          );
+      };
+      p.material.customProgramCacheKey = () => `arbol-viento-${p.kind}`;
     });
     especies.push(parts);
   }
@@ -82,14 +107,15 @@ export function instanciarArboles(especies, lista, celda = 60) {
         m4.compose(pos, q, sc);
         mesh.setMatrixAt(k, m4);
         if (part.kind === 'leaf') {
-          const v = 0.82 + t.tone * 0.3;
-          col.setRGB(v, v * (0.96 + t.tone * 0.08), v * 0.9);
+          const v = 0.8 + t.tone * 0.28;
+          col.setRGB(v * 0.84, v * (0.98 + t.tone * 0.06), v * 0.74); // verdes naturales, no amarillos
           mesh.setColorAt(k, col);
         }
       });
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      mesh.receiveShadow = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       mesh.computeBoundingSphere();
       group.add(mesh);
     });

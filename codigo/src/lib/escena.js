@@ -3,7 +3,7 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { BASE, prepararEspecies, instanciarArboles } from './arboles.js';
+import { BASE, prepararEspecies, instanciarArboles, vientoT } from './arboles.js';
 import { rampa, percentil } from './paleta.js';
 import { MESETA, ESCUELA, VIVIENDAS, PARQUE, HUMEDAL, VIAS, CORREDORES, PROGRAMA, PARQUE_RADIOS, HUMEDAL_RADIOS } from './plan.js';
 
@@ -771,6 +771,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   const reflCam = new THREE.PerspectiveCamera();
   const reflTexMat = new THREE.Matrix4();
   waterUniforms.uRefl = { value: reflRT.texture };
+  waterUniforms.uDim = U.uDim; // mismo objeto que el terreno: se oscurecen juntos
   waterUniforms.uTexMat = { value: reflTexMat };
   waterUniforms.uReflOn = { value: reflOn ? 1 : 0 };
   waterUniforms.uSat = { value: terrainMat.map };
@@ -791,7 +792,7 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     fragmentShader: `
       uniform float uTime; uniform sampler2D uNormals; uniform sampler2D uShore; uniform vec3 uSun; uniform vec4 uWin; uniform float uMpt;
       uniform vec3 uDeep; uniform vec3 uMid; uniform vec3 uShallow; uniform vec3 uHorizon; uniform vec3 uZenith;
-      uniform sampler2D uRefl; uniform mat4 uTexMat; uniform float uReflOn; uniform sampler2D uSat; uniform vec4 uMos;
+      uniform sampler2D uRefl; uniform mat4 uTexMat; uniform float uReflOn; uniform sampler2D uSat; uniform vec4 uMos; uniform float uDim;
       varying vec3 vWorld;
       #include <fog_pars_fragment>
       vec2 nm(vec2 p) { return texture2D(uNormals, p).rg * 2.0 - 1.0; }
@@ -803,6 +804,19 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
                 + nm(p / 73.0 + vec2(-uTime * 0.018, uTime * 0.012)) * 0.6
                 + nm(p / 19.0 + vec2(uTime * 0.032, -uTime * 0.027)) * 0.5 * lod
                 + nm(p / 6.1 + vec2(-uTime * 0.05, uTime * 0.043)) * 0.32 * lod;
+        // oleaje: dos trenes de olas largas (38 m y 23 m) que avanzan hacia la costa a su velocidad real (√(g/k)), suaves
+        vec2 d1 = normalize(vec2(-0.55, 0.83)); vec2 d2 = normalize(vec2(-0.9, 0.42));
+        float k1 = 6.2832 / 38.0; float k2 = 6.2832 / 23.0;
+        float f1 = dot(p, d1) * k1 - uTime * sqrt(9.8 * k1);
+        float f2 = dot(p, d2) * k2 - uTime * sqrt(9.8 * k2) + 1.7;
+        vec2 d3 = normalize(vec2(0.25, 1.0)); float k3 = 6.2832 / 14.0;
+        float f3 = dot(p, d3) * k3 - uTime * sqrt(9.8 * k3) + 4.1;
+        // la intensidad del oleaje cambia por zonas (no rayas perfectas) y se apaga con la distancia (evita el moiré)
+        float zona = 0.45 + 0.55 * (0.5 + 0.5 * nm(p / 1100.0 + vec2(uTime * 0.002, 0.0)).x);
+        float lodS = (1.0 - smoothstep(200.0, 1700.0, dc)) * zona;
+        vec2 ola = (d1 * cos(f1) * 0.22 + d2 * cos(f2) * 0.14 + d3 * cos(f3) * 0.09) * lodS;
+        float cresta = (sin(f1) * 0.5 + sin(f2) * 0.3 + sin(f3) * 0.2) * lodS;
+        n2 += ola;
         float k = mix(0.12, 0.26, lod);
         vec3 n = normalize(vec3(n2.x * k, 1.0, n2.y * k));
         vec3 V = normalize(cameraPosition - vWorld);
@@ -833,13 +847,14 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         sat *= min(1.0, 0.15 / max(lumS, 1e-4));
         sat = mix(sat, sat * vec3(0.72, 1.0, 1.12), 0.7);
         float bordeAncho = smoothstep(0.0, 0.14, min(eb.x, eb.y)) * inWin;
-        float costa = exp(-dm / 170.0) * bordeAncho;
+        float costa = exp(-dm / 170.0) * bordeAncho * mix(0.45, 1.0, lod); // de lejos la franja clara se atenúa
         float prof = smoothstep(0.0, 900.0, dm);
         vec3 hondo = mix(uMid, uDeep, prof);
         vec3 body = mix(hondo, sat * 1.08, costa);
         // luz que atraviesa la cresta de la ola
         body *= 0.86 + 0.22 * (n2.x + n2.y) * 0.5;
         body += uShallow * 0.05 * max(0.0, n2.x + n2.y);
+        body *= 1.0 + 0.04 * cresta; // la cresta de cada ola se ve un poco más clara
         vec3 col = mix(body, refl, clamp(F, 0.0, 1.0));
         // destellos del sol sobre las olas (finos, no un disco)
         float sd = max(dot(R, uSun), 0.0);
@@ -848,6 +863,8 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
         float ws = 0.5 + 0.5 * sin(dm / 5.0 - uTime * 1.1 + n2.x * 3.0);
         float rompe = (1.0 - smoothstep(0.0, 14.0, dm)) * (0.35 + 0.65 * ws) * borde;
         col = mix(col, vec3(0.86, 0.9, 0.9), clamp(rompe * 0.45, 0.0, 0.45));
+        // en las vistas de mapa el terreno se oscurece para leer las líneas: el agua se oscurece igual (si no, la orilla brilla como neón)
+        col *= mix(1.0, 0.42, uDim);
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -891,6 +908,23 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
   };
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
   sun.position.copy(sunDir).multiplyScalar(8000);
+  // sombras (solo en pantallas grandes): árboles y casas proyectan sombra sobre el terreno
+  const sombras = !small;
+  if (sombras) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 50;
+    sun.shadow.camera.far = 12000;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.radius = 2;
+    scene.add(sun.target);
+    terrain.receiveShadow = true;
+    patch.receiveShadow = true;
+    houseMesh.castShadow = true;
+    houseMesh.receiveShadow = true;
+  }
   scene.add(sun, new THREE.HemisphereLight(0xcfe6ff, 0x6b5d3a, 0.7));
 
   const camera = new THREE.PerspectiveCamera(42, 1, 5, 400000);
@@ -1552,6 +1586,16 @@ export async function crearEscena(mount, { onProgreso = () => {} } = {}) {
     // plano cercano proporcional a la distancia: evita el parpadeo (z-fighting) de superficies casi coplanares lejos de la cámara
     const nearW = THREE.MathUtils.clamp(dist * 0.02, 5, 250);
     if (Math.abs(nearW - camera.near) / camera.near > 0.1) { camera.near = nearW; camera.updateProjectionMatrix(); }
+    // sombras del sol: el recuadro de sombra sigue al punto que mira la cámara y se ajusta a la distancia
+    if (sombras) {
+      const half = THREE.MathUtils.clamp(dist * 0.6, 140, 1600);
+      sun.target.position.set(camLook.x + vi.px, 0, camLook.z + vi.pz);
+      sun.position.copy(sun.target.position).addScaledVector(sunDir, 5000);
+      const sc = sun.shadow.camera;
+      if (Math.abs(sc.right - half) / half > 0.04) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
+      sun.shadow.normalBias = ((2 * half) / sun.shadow.mapSize.x) * 1.6;
+    }
+    vientoT.value = t;
 
     // casas
     cur.casas += (T.casas - cur.casas) * expo(dt, 3);
