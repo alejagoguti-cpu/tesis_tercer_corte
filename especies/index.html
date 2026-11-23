@@ -1871,7 +1871,7 @@ function frame(now) {
   }
   eMat.opacity = (eMat.userData.base ?? 0.62) * (selected ? 1 : 1 - 0.5 * clamp01(morph));
   const tv = clamp01((morph - 0.55) / 0.45);
-  stems.material.opacity = 0.45 * tv; mallaTer.material.opacity = 0.08 * tv; mallaTer.visible = tv > 0.01;
+  stems.material.opacity = 0.45 * tv; mallaTer.visible = false; /* sin cuadrícula sobre el mar */
   obsPts.material.opacity = tv;
   selPts.material.opacity = tv;
 
